@@ -87,6 +87,7 @@ public final class ConfigManager {
 
                 boolean enabled = s.getBoolean("Enabled", true);
                 boolean toggleable = s.getBoolean("Toggleable", false);
+                boolean secondaryAction = s.getBoolean("SecondaryAction", false);
                 String screenType = s.getString("ScreenType", "NONE");
 
                 String displayName = s.getString("DisplayName", id);
@@ -96,7 +97,7 @@ public final class ConfigManager {
                 List<String> lore = s.getStringList("Lore");
 
                 upgrades.put(id.toLowerCase(Locale.ROOT), new UpgradeDef(id, displayName, material, lore, enabled,
-                        toggleable, ScreenType.from(screenType)));
+                        toggleable, secondaryAction, ScreenType.from(screenType)));
             }
         }
     }
