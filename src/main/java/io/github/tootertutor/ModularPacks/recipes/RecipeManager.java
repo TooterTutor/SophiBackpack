@@ -27,6 +27,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 
 import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
+import io.github.tootertutor.ModularPacks.config.Placeholders;
 import io.github.tootertutor.ModularPacks.item.BackpackItems;
 import io.github.tootertutor.ModularPacks.item.Keys;
 import io.github.tootertutor.ModularPacks.item.UpgradeItems;
@@ -212,7 +213,7 @@ public final class RecipeManager implements Listener {
         ItemStack preview = new ItemStack(def.material());
         ItemMeta meta = preview.getItemMeta();
         if (meta != null) {
-            meta.displayName(Text.c(def.displayName()));
+            meta.displayName(Text.c(Placeholders.expandText(plugin, def, preview, def.displayName())));
             preview.setItemMeta(meta);
         }
 
@@ -272,7 +273,7 @@ public final class RecipeManager implements Listener {
                 ItemStack it = new ItemStack(def.material());
                 var meta = it.getItemMeta();
                 if (meta != null) {
-                    meta.displayName(Text.c(def.displayName()));
+                    meta.displayName(Text.c(Placeholders.expandText(plugin, def, it, def.displayName())));
                     it.setItemMeta(meta);
                 }
                 yield it;
