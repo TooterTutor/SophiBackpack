@@ -1,13 +1,18 @@
 package io.github.tootertutor.ModularPacks.modules;
 
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.BlastingRecipe;
 import org.bukkit.inventory.CookingRecipe;
@@ -18,13 +23,23 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.SmokingRecipe;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.components.FoodComponent;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import io.papermc.paper.datacomponent.item.Consumable;
+import io.papermc.paper.datacomponent.item.FoodProperties;
+import io.papermc.paper.datacomponent.item.SuspiciousStewEffects;
+import io.papermc.paper.datacomponent.item.consumable.ConsumeEffect;
+import io.papermc.paper.potion.SuspiciousEffectEntry;
 import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
 import io.github.tootertutor.ModularPacks.config.ScreenType;
 import io.github.tootertutor.ModularPacks.data.BackpackData;
 import io.github.tootertutor.ModularPacks.data.ItemStackCodec;
+import io.github.tootertutor.ModularPacks.gui.BackpackMenuHolder;
 import io.github.tootertutor.ModularPacks.gui.ModuleScreenHolder;
 import io.github.tootertutor.ModularPacks.item.Keys;
 
@@ -39,6 +54,8 @@ public final class ModuleEngineService {
 
     private final ModularPacksPlugin plugin;
     private BukkitTask task;
+
+    private final Map<UUID, Integer> lastFedTickByPlayer = new HashMap<>();
 
     public ModuleEngineService(ModularPacksPlugin plugin) {
         this.plugin = plugin;
@@ -59,9 +76,13 @@ public final class ModuleEngineService {
 
     private void tickOpenScreens() {
         Set<UUID> openModuleIds = new HashSet<>();
+        Set<UUID> openBackpackIds = new HashSet<>();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             Inventory top = player.getOpenInventory().getTopInventory();
+            if (top.getHolder() instanceof BackpackMenuHolder bmh) {
+                openBackpackIds.add(bmh.backpackId());
+            }
             if (!(top.getHolder() instanceof ModuleScreenHolder msh))
                 continue;
 
@@ -75,7 +96,7 @@ public final class ModuleEngineService {
             // Later: add other engines here (stonecutter, smithing, etc.)
         }
 
-        tickCarriedBackpacks(openModuleIds);
+        tickCarriedBackpacks(openModuleIds, openBackpackIds);
     }
 
     private void tickFurnaceScreen(Player player, ModuleScreenHolder msh, Inventory inv) {
@@ -121,11 +142,11 @@ public final class ModuleEngineService {
         plugin.repo().saveBackpack(data);
     }
 
-    private void tickCarriedBackpacks(Set<UUID> openModuleIds) {
+    private void tickCarriedBackpacks(Set<UUID> openModuleIds, Set<UUID> openBackpackIds) {
         Keys keys = plugin.keys();
-        Set<UUID> processedBackpacks = new HashSet<>();
 
         for (Player player : Bukkit.getOnlinePlayers()) {
+            Set<UUID> processedBackpacks = new HashSet<>();
             ItemStack[] contents = player.getInventory().getContents();
             if (contents == null || contents.length == 0)
                 continue;
@@ -141,15 +162,62 @@ public final class ModuleEngineService {
                 if (backpackType == null || backpackType.isBlank())
                     continue;
 
-                tickBackpackModules(backpackId, backpackType, openModuleIds);
+                tickBackpack(player, backpackId, backpackType, openModuleIds, openBackpackIds);
             }
         }
     }
 
-    private void tickBackpackModules(UUID backpackId, String backpackType, Set<UUID> openModuleIds) {
+    private void tickBackpack(
+            Player player,
+            UUID backpackId,
+            String backpackType,
+            Set<UUID> openModuleIds,
+            Set<UUID> openBackpackIds) {
+
+        var typeDef = plugin.cfg().findType(backpackType);
+        if (typeDef == null)
+            return;
+
         BackpackData data = plugin.repo().loadOrCreate(backpackId, backpackType);
+
+        boolean allowContentsMutations = openBackpackIds == null || !openBackpackIds.contains(backpackId);
+
         boolean changedAny = false;
 
+        // Passive modules that mutate backpack contents (skip while that backpack GUI is open)
+        if (allowContentsMutations) {
+            ItemStack[] logical = ensureLogicalContentsSize(data, typeDef.rows() * 9);
+
+            UUID voidId = findInstalledModuleId(data, "Void");
+            if (voidId != null) {
+                changedAny |= applyVoid(logical, readWhitelistFromState(data, voidId));
+            }
+
+            UUID feedingId = findInstalledModuleId(data, "Feeding");
+            if (feedingId != null) {
+                changedAny |= applyFeeding(player, logical, readWhitelistFromState(data, feedingId));
+            }
+
+            UUID magnetId = findInstalledModuleId(data, "Magnetic");
+            if (magnetId != null) {
+                changedAny |= applyMagnet(player, logical, readWhitelistFromState(data, magnetId));
+            }
+
+            if (changedAny) {
+                data.contentsBytes(ItemStackCodec.toBytes(logical));
+            }
+        }
+
+        // Ticking module states (furnace-like) is safe even if backpack GUI is open.
+        changedAny |= tickInstalledFurnaces(data, openModuleIds);
+
+        if (changedAny) {
+            plugin.repo().saveBackpack(data);
+        }
+    }
+
+    private boolean tickInstalledFurnaces(BackpackData data, Set<UUID> openModuleIds) {
+        boolean changedAny = false;
         for (UUID moduleId : data.installedModules().values()) {
             if (moduleId == null)
                 continue;
@@ -169,9 +237,433 @@ public final class ModuleEngineService {
             data.moduleStates().put(moduleId, FurnaceStateCodec.encode(s));
             changedAny = true;
         }
+        return changedAny;
+    }
 
-        if (changedAny) {
-            plugin.repo().saveBackpack(data);
+    private ItemStack[] ensureLogicalContentsSize(BackpackData data, int size) {
+        if (size < 0)
+            size = 0;
+        ItemStack[] logical = ItemStackCodec.fromBytes(data.contentsBytes());
+        if (logical.length != size) {
+            ItemStack[] resized = new ItemStack[size];
+            System.arraycopy(logical, 0, resized, 0, Math.min(logical.length, size));
+            logical = resized;
+        }
+        return logical;
+    }
+
+    private UUID findInstalledModuleId(BackpackData data, String targetModuleType) {
+        if (data == null || targetModuleType == null)
+            return null;
+
+        for (UUID moduleId : data.installedModules().values()) {
+            if (moduleId == null)
+                continue;
+            ItemStack moduleItem = resolveModuleSnapshotItem(data, moduleId);
+            if (moduleItem == null || !moduleItem.hasItemMeta())
+                continue;
+
+            ItemMeta meta = moduleItem.getItemMeta();
+            if (meta == null)
+                continue;
+
+            String moduleType = meta.getPersistentDataContainer().get(plugin.keys().MODULE_TYPE, PersistentDataType.STRING);
+            if (moduleType == null || !moduleType.equalsIgnoreCase(targetModuleType))
+                continue;
+
+            var def = plugin.cfg().findUpgrade(moduleType);
+            if (def == null || !def.enabled())
+                continue;
+
+            Byte enabled = meta.getPersistentDataContainer().get(plugin.keys().MODULE_ENABLED, PersistentDataType.BYTE);
+            if (enabled != null && enabled == 0)
+                continue;
+
+            return moduleId;
+        }
+        return null;
+    }
+
+    private ItemStack resolveModuleSnapshotItem(BackpackData data, UUID moduleId) {
+        byte[] snap = data.installedSnapshots().get(moduleId);
+        if (snap == null)
+            return null;
+        ItemStack[] arr;
+        try {
+            arr = ItemStackCodec.fromBytes(snap);
+        } catch (Exception ignored) {
+            return null;
+        }
+        if (arr.length == 0)
+            return null;
+        return arr[0];
+    }
+
+    private Set<Material> readWhitelistFromState(BackpackData data, UUID moduleId) {
+        if (data == null || moduleId == null)
+            return Set.of();
+        byte[] bytes = data.moduleStates().get(moduleId);
+        if (bytes == null || bytes.length == 0)
+            return Set.of();
+
+        ItemStack[] arr = ItemStackCodec.fromBytes(bytes);
+        if (arr == null || arr.length == 0)
+            return Set.of();
+
+        Set<Material> out = new LinkedHashSet<>();
+        for (ItemStack it : arr) {
+            if (it == null || it.getType().isAir())
+                continue;
+            out.add(it.getType());
+        }
+        return out;
+    }
+
+    private boolean applyVoid(ItemStack[] contents, Set<Material> whitelist) {
+        if (contents == null || whitelist == null)
+            return false;
+
+        // Safeguard: never void everything by accident
+        if (whitelist.isEmpty())
+            return false;
+
+        boolean changed = false;
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack it = contents[i];
+            if (it == null || it.getType().isAir())
+                continue;
+            if (!whitelist.contains(it.getType()))
+                continue;
+            contents[i] = null;
+            changed = true;
+        }
+        return changed;
+    }
+
+    private boolean applyFeeding(Player player, ItemStack[] contents, Set<Material> whitelist) {
+        if (player == null || contents == null || whitelist == null)
+            return false;
+
+        int minFood = Math.max(0, Math.min(20, plugin.getConfig().getInt("Upgrades.Feeding.MinFoodLevel", 18)));
+        int foodLevel = player.getFoodLevel();
+        if (foodLevel >= minFood)
+            return false;
+
+        int now = Bukkit.getCurrentTick();
+        int lastFed = lastFedTickByPlayer.getOrDefault(player.getUniqueId(), -99999);
+        int cooldown = Math.max(0, plugin.getConfig().getInt("Upgrades.Feeding.CooldownTicks", 20));
+        if (now - lastFed < cooldown)
+            return false;
+
+        int needed = Math.max(1, minFood - foodLevel);
+        int bestIndex = -1;
+        int bestOvershoot = Integer.MAX_VALUE;
+        float bestSaturationPoints = -1.0f;
+
+        int fallbackIndex = -1;
+        int fallbackNutrition = -1;
+        float fallbackSaturationPoints = -1.0f;
+
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack it = contents[i];
+            if (it == null || it.getType().isAir())
+                continue;
+            if (!it.getType().isEdible())
+                continue;
+            if (!whitelist.isEmpty() && !whitelist.contains(it.getType()))
+                continue;
+
+            FoodValues v = FoodValues.lookup(it);
+            int nutrition = v.nutrition();
+            if (nutrition <= 0)
+                continue;
+
+            float satPoints = saturationPoints(nutrition, v.saturation());
+            int overshoot = (foodLevel + nutrition) - minFood;
+
+            // Prefer foods that get us to (or above) minFood with minimal overshoot.
+            if (overshoot >= 0) {
+                if (overshoot < bestOvershoot || (overshoot == bestOvershoot && satPoints > bestSaturationPoints)) {
+                    bestIndex = i;
+                    bestOvershoot = overshoot;
+                    bestSaturationPoints = satPoints;
+                }
+                continue;
+            }
+
+            // Otherwise, pick the largest nutrition food so we reach the threshold faster.
+            if (nutrition > fallbackNutrition || (nutrition == fallbackNutrition && satPoints > fallbackSaturationPoints)) {
+                fallbackIndex = i;
+                fallbackNutrition = nutrition;
+                fallbackSaturationPoints = satPoints;
+            }
+        }
+
+        int index = bestIndex >= 0 ? bestIndex : fallbackIndex;
+        if (index < 0)
+            return false;
+
+        ItemStack it = contents[index];
+
+        boolean debug = plugin.getConfig().getBoolean("Upgrades.Feeding.Debug", false);
+        int beforeFood = player.getFoodLevel();
+        float beforeSat = player.getSaturation();
+
+        // Consume one item
+        ItemStack after = decrementOne(it);
+        contents[index] = after;
+
+        // Handle remaining container item (e.g. soup -> bowl)
+        Material rem = it.getType().getCraftingRemainingItem();
+        if (rem != null && !rem.isAir()) {
+            ItemStack leftover = insertIntoContents(contents, new ItemStack(rem, 1));
+            if (leftover != null && !leftover.getType().isAir() && leftover.getAmount() > 0) {
+                var notFit = player.getInventory().addItem(leftover);
+                if (!notFit.isEmpty()) {
+                    player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+                }
+            }
+        }
+
+        applyFoodValues(player, it);
+        int effectsApplied = applyFoodEffects(player, it);
+
+        if (debug) {
+            FoodValues v = FoodValues.lookup(it);
+            int nutrition = v.nutrition();
+            float satPoints = saturationPoints(nutrition, v.saturation());
+            plugin.getLogger().info(String.format(
+                    "[Feeding] %s ate %s: food %d->%d, sat %.2f->%.2f (nutrition=%d, sat=%.3f, satPts=%.2f, effects=%d, minFood=%d, needed=%d)",
+                    player.getName(),
+                    it.getType().name(),
+                    beforeFood,
+                    player.getFoodLevel(),
+                    beforeSat,
+                    player.getSaturation(),
+                    nutrition,
+                    v.saturation(),
+                    satPoints,
+                    effectsApplied,
+                    minFood,
+                    needed));
+        }
+
+        lastFedTickByPlayer.put(player.getUniqueId(), now);
+        return true;
+    }
+
+    private boolean applyMagnet(Player player, ItemStack[] contents, Set<Material> whitelist) {
+        if (player == null || contents == null || whitelist == null)
+            return false;
+
+        double range = plugin.getConfig().getDouble("Upgrades.Magnetic.Range", 6.0);
+        if (range <= 0.1)
+            return false;
+        int maxEntities = Math.max(1, Math.min(256, plugin.getConfig().getInt("Upgrades.Magnetic.MaxItemsPerTick", 32)));
+
+        boolean changed = false;
+        int processed = 0;
+
+        for (Entity ent : player.getNearbyEntities(range, range, range)) {
+            if (processed >= maxEntities)
+                break;
+            if (!(ent instanceof Item itemEnt))
+                continue;
+            if (itemEnt.getPickupDelay() > 0)
+                continue;
+
+            ItemStack stack = itemEnt.getItemStack();
+            if (stack == null || stack.getType().isAir())
+                continue;
+            if (!whitelist.isEmpty() && !whitelist.contains(stack.getType()))
+                continue;
+
+            ItemStack remainder = insertIntoContents(contents, stack.clone());
+            if (remainder == null || remainder.getType().isAir() || remainder.getAmount() <= 0) {
+                itemEnt.remove();
+                changed = true;
+                processed++;
+                continue;
+            }
+
+            // Partial insert; update entity
+            if (remainder.getAmount() != stack.getAmount()) {
+                itemEnt.setItemStack(remainder);
+                changed = true;
+                processed++;
+            }
+        }
+
+        return changed;
+    }
+
+    private ItemStack insertIntoContents(ItemStack[] contents, ItemStack stack) {
+        if (contents == null)
+            return stack;
+        if (stack == null || stack.getType().isAir())
+            return stack;
+
+        // Merge into existing stacks first
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack cur = contents[i];
+            if (cur == null || cur.getType().isAir())
+                continue;
+            if (!cur.isSimilar(stack))
+                continue;
+            int max = cur.getMaxStackSize();
+            int space = max - cur.getAmount();
+            if (space <= 0)
+                continue;
+
+            int move = Math.min(space, stack.getAmount());
+            ItemStack merged = cur.clone();
+            merged.setAmount(cur.getAmount() + move);
+            contents[i] = merged;
+
+            stack.setAmount(stack.getAmount() - move);
+            if (stack.getAmount() <= 0)
+                return null;
+        }
+
+        // Empty slots
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack cur = contents[i];
+            if (cur != null && !cur.getType().isAir())
+                continue;
+
+            int toPlace = Math.min(stack.getMaxStackSize(), stack.getAmount());
+            ItemStack placed = stack.clone();
+            placed.setAmount(toPlace);
+            contents[i] = placed;
+
+            stack.setAmount(stack.getAmount() - toPlace);
+            if (stack.getAmount() <= 0)
+                return null;
+        }
+
+        return stack;
+    }
+
+    private void applyFoodValues(Player player, ItemStack foodItem) {
+        if (player == null || foodItem == null || foodItem.getType().isAir())
+            return;
+
+        FoodValues values = FoodValues.lookup(foodItem);
+        int nutrition = values.nutrition();
+        float saturationPoints = saturationPoints(nutrition, values.saturation());
+
+        int newFood = Math.min(20, player.getFoodLevel() + nutrition);
+        player.setFoodLevel(newFood);
+
+        // Saturation is clamped to food level in vanilla.
+        float newSat = Math.min(newFood, player.getSaturation() + saturationPoints);
+        player.setSaturation(newSat);
+    }
+
+    private int applyFoodEffects(Player player, ItemStack foodItem) {
+        if (player == null || foodItem == null || foodItem.getType().isAir())
+            return 0;
+
+        int applied = 0;
+
+        // General consumable effects (covers things like Rotten Flesh, Golden Apples, Chorus Fruit, etc.)
+        try {
+            Consumable consumable = foodItem.getData(DataComponentTypes.CONSUMABLE);
+            if (consumable != null) {
+                for (ConsumeEffect effect : consumable.consumeEffects()) {
+                    if (effect instanceof ConsumeEffect.ApplyStatusEffects ase) {
+                        float prob = ase.probability();
+                        if (prob <= 0.0f)
+                            continue;
+                        if (prob < 1.0f && java.util.concurrent.ThreadLocalRandom.current().nextFloat() >= prob)
+                            continue;
+
+                        for (Object o : ase.effects()) {
+                            if (o instanceof PotionEffect pe) {
+                                player.addPotionEffect(pe);
+                                applied++;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        // Suspicious stew stores its effects in a separate component.
+        try {
+            SuspiciousStewEffects stew = foodItem.getData(DataComponentTypes.SUSPICIOUS_STEW_EFFECTS);
+            if (stew != null) {
+                for (SuspiciousEffectEntry e : stew.effects()) {
+                    PotionEffectType type = e.effect();
+                    if (type == null)
+                        continue;
+                    int duration = Math.max(0, e.duration());
+                    if (duration <= 0)
+                        continue;
+                    player.addPotionEffect(new PotionEffect(type, duration, 0));
+                    applied++;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return applied;
+    }
+
+    private static float saturationPoints(int nutrition, float saturation) {
+        if (nutrition <= 0)
+            return 0.0f;
+
+        float s = Math.max(0.0f, saturation);
+
+        // Depending on the source, "saturation" may be:
+        // - saturation modifier (vanilla math uses nutrition * modifier * 2)
+        // - absolute saturation points (some APIs / tooltips display this)
+        //
+        // Heuristic: modifiers are typically <= ~1.2; points are usually > 1.5.
+        if (s <= 1.5f) {
+            return Math.max(0.0f, nutrition * s * 2.0f);
+        }
+        return s;
+    }
+
+    private record FoodValues(int nutrition, float saturation) {
+        static FoodValues lookup(ItemStack stack) {
+            if (stack == null || stack.getType().isAir())
+                return new FoodValues(0, 0.0f);
+
+            // Paper data components: works for all vanilla food items (and custom food components).
+            try {
+                FoodProperties fp = stack.getData(DataComponentTypes.FOOD);
+                if (fp != null) {
+                    return new FoodValues(Math.max(0, fp.nutrition()), Math.max(0.0f, fp.saturation()));
+                }
+            } catch (Throwable ignored) {
+            }
+
+            FoodComponent fc = foodComponentFromMeta(stack.getItemMeta());
+            if (fc == null) {
+                // Default values for the material (covers normal food items).
+                fc = foodComponentFromMeta(new ItemStack(stack.getType()).getItemMeta());
+            }
+
+            if (fc != null) {
+                return new FoodValues(Math.max(0, fc.getNutrition()), Math.max(0.0f, fc.getSaturation()));
+            }
+
+            // Final fallback: edible but unknown food values.
+            return new FoodValues(stack.getType().isEdible() ? 1 : 0, 0.0f);
+        }
+
+        private static FoodComponent foodComponentFromMeta(ItemMeta meta) {
+            if (meta == null || !meta.hasFood())
+                return null;
+            try {
+                return meta.getFood();
+            } catch (Throwable ignored) {
+                return null;
+            }
         }
     }
 
