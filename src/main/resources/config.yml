@@ -120,8 +120,6 @@ BackpackTypes:
       - "&7Netherite backpack that can carry 10 rows of items."
       - "{backpackContents}"
     CustomModelData: 1005
-    Attributes:
-      - Fireproof
 
 # ScreenType can be one NONE, Crafting, Smelting, Blasting, Smoking, Stonecutter, Anvil, Smithing, Dropper, or Hopper.
 
@@ -136,7 +134,7 @@ Upgrades:
   # Utility upgrades provide various useful features to backpacks.
   Everlasting:
     Enabled: true
-    Toggleable: true
+    Toggleable: false
     # Type of screen to open when clicking on the upgrade in the backpack GUI.
     ScreenType: NONE
     # Crafting Recipe for the upgrade
@@ -157,18 +155,14 @@ Upgrades:
       - "{moduleActions}"
     CustomModelData: 2001
 
-    # Upgrade Attributes
-    Attributes:
-      - Passive
-      - Voidproof
-      - Despawnproof
-      - Fireproof
-
-  Magnetic:
+  Magnet:
     Enabled: true
     Toggleable: true
     # Type of screen to open when clicking on the upgrade in the backpack GUI.
     ScreenType: Dropper
+    # Magnet behavior tuning
+    Range: 6.0
+    MaxItemsPerTick: 32
     CraftingRecipe:
       Type: Crafting
       Pattern:
@@ -185,18 +179,17 @@ Upgrades:
     DisplayName: "&aMagnet Upgrade"
     Lore:
       - "&7Automatically picks up items in a radius of the backpack."
+      - "{toggleState}"
       - "{moduleActions}"
       - "{magnetRange}"
     CustomModelData: 2002
 
-    Attributes:
-      - Passive
-      - Magnetic
-
   Tank:
     Enabled: true
     Toggleable: true
+    SecondaryAction: true
     ScreenType: NONE
+    # Tank behavior (currently supports storing/filling water & lava buckets)
     CraftingRecipe:
       Type: Crafting
       Pattern:
@@ -214,19 +207,20 @@ Upgrades:
     DisplayName: "&bFluid Upgrade"
     Lore:
       - "&7Allows Fluids or Experience to be stored."
+      - "{toggleState}"
       - "{moduleActions}"
       - "{containedFluid}"
     CustomModelData: 2003
-
-    Attributes:
-      - Active
-      - FluidTank
-      - ExperienceTank
 
   Feeding:
     Enabled: true
     Toggleable: true
     ScreenType: Dropper
+    # Feeding behavior tuning
+    MinFoodLevel: 18
+    CooldownTicks: 20
+    # Debug feeding math/selection in console
+    Debug: false
     CraftingRecipe:
       Type: Crafting
       Pattern:
@@ -244,11 +238,9 @@ Upgrades:
     DisplayName: "&3Feeding Upgrade"
     Lore:
       - "&7Automatically feeds the Player when hungry."
+      - "{toggleState}"
       - "{moduleActions}"
     CustomModelData: 2004
-
-    Attributes:
-      - Passive
 
   Void:
     Enabled: true
@@ -271,16 +263,15 @@ Upgrades:
     Lore:
       # - "&7Voids all the hungry."
       - "&7Voids all filtered items."
+      - "{toggleState}"
       - "{moduleActions}"
 
     CustomModelData: 2005
 
-    Attributes:
-      - Passive
-
   # Workstation upgrades allow opening various crafting/smelting/etc., interfaces directly from the backpack.
   Crafting:
     Enabled: true
+    Toggleable: false
     ScreenType: Crafting
     Pattern:
     CraftingRecipe:
@@ -302,11 +293,9 @@ Upgrades:
       - "{moduleActions}"
     CustomModelData: 2006
 
-    Attributes:
-      - Active
-
   Smelting:
     Enabled: true
+    Toggleable: false
     ScreenType: Smelting
     CraftingRecipe:
       Type: Crafting
@@ -327,11 +316,9 @@ Upgrades:
       - "{moduleActions}"
     CustomModelData: 2007
 
-    Attributes:
-      - Active
-
   Blasting:
     Enabled: true
+    Toggleable: false
     ScreenType: Blasting
     CraftingRecipe:
       Type: Crafting
@@ -352,11 +339,9 @@ Upgrades:
       - "{moduleActions}"
     CustomModelData: 2008
 
-    Attributes:
-      - Active
-
   Smoking:
     Enabled: true
+    Toggleable: false
     ScreenType: Smoking
     CraftingRecipe:
       Type: Crafting
@@ -377,11 +362,9 @@ Upgrades:
       - "{moduleActions}"
     CustomModelData: 2009
 
-    Attributes:
-      - Active
-
   Stonecutter:
     Enabled: true
+    Toggleable: false
     ScreenType: Stonecutter
     CraftingRecipe:
       Type: Crafting
@@ -402,11 +385,9 @@ Upgrades:
       - "{moduleActions}"
     CustomModelData: 2010
 
-    Attributes:
-      - Active
-
   Anvil:
     Enabled: true
+    Toggleable: false
     ScreenType: Anvil
     CraftingRecipe:
       Type: Crafting
@@ -427,11 +408,9 @@ Upgrades:
       - "{moduleActions}"
     CustomModelData: 2011
 
-    Attributes:
-      - Active
-
   Smithing:
     Enabled: true
+    Toggleable: false
     ScreenType: Smithing
     CraftingRecipe:
       Type: Crafting
@@ -452,11 +431,10 @@ Upgrades:
       - "{moduleActions}"
     CustomModelData: 2012
 
-    Attributes:
-      - Active
-
   Jukebox:
     Enabled: true
+    Toggleable: true
+    SecondaryAction: true
     ScreenType: Dropper
     CraftingRecipe:
       Type: Crafting
@@ -474,8 +452,6 @@ Upgrades:
     DisplayName: "&eJukebox Upgrade"
     Lore:
       - "&7A portable Jukebox."
+      - "{toggleState}"
       - "{moduleActions}"
     CustomModelData: 2015
-
-    Attributes:
-      - Passive

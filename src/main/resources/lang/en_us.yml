@@ -1,14 +1,45 @@
 moduleActions:
   - "&8[&6ʟ-ᴄʟɪᴄᴋ&8]&7 Open Module."
-  - "&8[&6ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Upgrade."
   - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
-# moduleUnused: "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Placeholder Message."
+  - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
+
+moduleActionsPrimary:
+  - "&8[&6ʟ-ᴄʟɪᴄᴋ&8]&7 Open Module."
+  - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
+  - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
+
+moduleActionsSecondary:
+  - "&8[&6ʟ-ᴄʟɪᴄᴋ&8]&7 Activate Module."
+  - "&8[&6ʀ-ᴄʟɪᴄᴋ&8]&7 Module Action."
+  - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
+  - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
+
+moduleActionsTank:
+  - "&8[&6ʟ-ᴄʟɪᴄᴋ&8]&7 Activate (+1 level)."
+  - "&8[&6ʀ-ᴄʟɪᴄᴋ&8]&7 Action (-1 level / toggle EXP mode when empty)."
+  - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
+  - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
+
+moduleActionsPassive:
+  - "&8[&6ᴘᴀꜱꜱɪᴠᴇ&8]&7 Always active."
+  - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
+  - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
+
+toggleState:
+  enabled: "&7State: &aᴇɴᴀʙʟᴇᴅ"
+  disabled: "&7State: &cᴅɪѕᴀʙʟᴇᴅ"
 
 magnetRange:
-  - "&8"
+  - "&7Range: &f{Range} &7blocks"
 
-tankContained:
-  - "&8"
+# Replaces {containedFluid} in the Tank upgrade lore
+tankContainedFluid:
+  - "&7Stored: &f{amount}/{max} &7buckets"
+  - "&7Fluid: &f{fluid}"
+
+# Used when the Tank is in EXP mode (or contains XP)
+tankContainedExp:
+  - "&7Stored XP: &f{levels}/{maxLevels} &7levels"
 
 errors:
   modulePlaceBlocked: "&cYou can't place modules in the world."

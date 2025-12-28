@@ -3,7 +3,6 @@ package io.github.tootertutor.ModularPacks.config;
 import java.io.File;
 import java.util.Collections;
 import java.util.List;
-
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
@@ -25,12 +24,6 @@ public final class LangManager {
         this.lang = YamlConfiguration.loadConfiguration(f);
     }
 
-    public List<String> moduleActions() {
-        if (lang == null)
-            return Collections.emptyList();
-        return lang.getStringList("moduleActions");
-    }
-
     public String get(String path, String fallback) {
         if (lang == null)
             return fallback;
@@ -42,5 +35,21 @@ public final class LangManager {
             return Collections.emptyList();
         List<String> out = lang.getStringList(path);
         return out == null ? Collections.emptyList() : out;
+    }
+
+    /**
+     * Returns the raw YAML value at the given path (String, Number, Boolean, List,
+     * etc.). Useful for dynamic placeholder expansion.
+     */
+    public Object raw(String path) {
+        if (lang == null || path == null)
+            return null;
+        return lang.get(path);
+    }
+
+    public boolean has(String path) {
+        if (lang == null || path == null)
+            return false;
+        return lang.contains(path);
     }
 }
