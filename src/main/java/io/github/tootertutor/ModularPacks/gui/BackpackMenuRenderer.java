@@ -17,6 +17,7 @@ import io.github.tootertutor.ModularPacks.config.BackpackTypeDef;
 import io.github.tootertutor.ModularPacks.data.BackpackData;
 import io.github.tootertutor.ModularPacks.data.ItemStackCodec;
 import io.github.tootertutor.ModularPacks.item.Keys;
+import io.github.tootertutor.ModularPacks.modules.TankModuleLogic;
 import io.github.tootertutor.ModularPacks.text.Text;
 import net.kyori.adventure.text.Component;
 
@@ -360,6 +361,15 @@ public final class BackpackMenuRenderer {
             if (meta != null && !meta.getPersistentDataContainer().has(keys.MODULE_ID, PersistentDataType.STRING)) {
                 meta.getPersistentDataContainer().set(keys.MODULE_ID, PersistentDataType.STRING, moduleId.toString());
                 display.setItemMeta(meta);
+            }
+
+            // Dynamic visuals for Tank module based on stored state
+            ItemMeta meta2 = display.getItemMeta();
+            if (meta2 != null) {
+                String moduleType = meta2.getPersistentDataContainer().get(keys.MODULE_TYPE, PersistentDataType.STRING);
+                if (moduleType != null && moduleType.equalsIgnoreCase("Tank")) {
+                    TankModuleLogic.applyVisuals(plugin, display, holder.data().moduleStates().get(moduleId));
+                }
             }
 
             inv.setItem(invSlot, display);

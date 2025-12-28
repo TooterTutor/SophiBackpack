@@ -11,5 +11,6 @@ public record UpgradeDef(
                 List<String> lore,
                 boolean enabled,
                 boolean toggleable,
+                boolean secondaryAction,
                 ScreenType screenType) {
 }
