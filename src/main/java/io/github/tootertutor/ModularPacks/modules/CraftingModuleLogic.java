@@ -106,7 +106,7 @@ public final class CraftingModuleLogic {
                 return;
             }
 
-            ItemStack out = craftResult(recipes, player, match);
+            ItemStack out = craftResult(recipes, player, match, matrix);
             if (out == null || out.getType().isAir())
                 return;
             var leftovers = player.getInventory().addItem(out);
@@ -130,7 +130,7 @@ public final class CraftingModuleLogic {
             return;
         }
 
-        ItemStack out = craftResult(recipes, player, match);
+        ItemStack out = craftResult(recipes, player, match, matrix);
         if (out == null || out.getType().isAir())
             return;
 
@@ -150,13 +150,13 @@ public final class CraftingModuleLogic {
         applyConsumption(inv, matrix, match.consumePerSlot);
     }
 
-    private static ItemStack craftResult(RecipeManager recipes, Player player, CraftMatch match) {
+    private static ItemStack craftResult(RecipeManager recipes, Player player, CraftMatch match, ItemStack[] matrix) {
         if (match == null)
             return null;
         if (recipes == null || match.recipe == null)
             return match.result == null ? null : match.result.clone();
 
-        ItemStack out = recipes.createCraftResult(player, match.recipe);
+        ItemStack out = recipes.createCraftResult(player, match.recipe, matrix);
         return out == null ? null : out.clone();
     }
 

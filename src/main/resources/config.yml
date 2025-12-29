@@ -17,6 +17,13 @@ modularpacks:
   AllowShulkerBoxes: false
   AllowBundles: false
 
+  # Prevent specific item types from being inserted into backpacks (Magnet respects this).
+  # Example:
+  # BackpackInsertBlacklist:
+  #   - BEDROCK
+  #   - SHULKER_BOX
+  BackpackInsertBlacklist: []
+
   # GUI Materials
   NavPageButtons: ARROW
   NavBorderFiller: GRAY_STAINED_GLASS_PANE
@@ -32,6 +39,17 @@ modularpacks:
   # 🮁 represents the UpgradeSlots
 
 BackpackTypes:
+  # CraftingRecipe supports either:
+  # 1) Single recipe (old format):
+  #    CraftingRecipe:
+  #      Type: Crafting
+  #      Pattern: ["III","IBI","III"]
+  #      Ingredients: { I: IRON_INGOT, B: BACKPACK:Leather }
+  #
+  # 2) Multiple alternative recipes (list-of-maps format):
+  #    CraftingRecipe:
+  #      - "1": { Type: Crafting, Pattern: [...], Ingredients: {...} }
+  #      - "2": { Type: Crafting, Pattern: [...], Ingredients: {...} }
   Leather:
     Rows: 2
     UpgradeSlots: 1
@@ -54,26 +72,68 @@ BackpackTypes:
       - "{backpackId}"
       - "{installedModules}"
     CustomModelData: 1001
+    SkullData:
+  Copper:
+    Rows: 3
+    UpgradeSlots: 1
+    CraftingRecipe:
+      Type: Crafting
+      Pattern:
+        - " C "
+        - "CBC"
+        - " C "
+      Ingredients:
+        C: COPPER_INGOT
+        B: BACKPACK:Leather
+      OutputMaterial: PLAYER_HEAD
+    DisplayName: "&6Copper Backpack"
+    Lore:
+      - "&7Copper Backpack that can carry 3 rows of items."
+      - "{backpackContents}"
+      - "{backpackId}"
+      - "{installedModules}"
+    CustomModelData: 1006
+    SkullData:
   Iron:
     Rows: 4
     UpgradeSlots: 2
     CraftingRecipe:
-      Type: Crafting
-      Pattern:
-        - "III"
-        - "IBI"
-        - "III"
-      Ingredients:
-        I: IRON_INGOT
-        B: BACKPACK:Leather
-      OutputMaterial: PLAYER_HEAD
-    DisplayName: "&6Iron Backpack"
-    Lore:
-      - "&7Iron Backpack that can carry 4 rows of items."
-      - "{backpackContents}"
-      - "{backpackId}"
-      - "{installedModules}"
-    CustomModelData: 1002
+      - "1":
+        Type: Crafting
+        Pattern:
+          - "III"
+          - "IBI"
+          - "III"
+        Ingredients:
+          I: IRON_INGOT
+          B: BACKPACK:Leather
+        OutputMaterial: PLAYER_HEAD
+        DisplayName: "&6Iron Backpack"
+        Lore:
+          - "&7Iron Backpack that can carry 4 rows of items."
+          - "{backpackContents}"
+          - "{backpackId}"
+          - "{installedModules}"
+        CustomModelData: 1002
+        SkullData:
+      - "2":
+        Type: Crafting
+        Pattern:
+          - " I "
+          - "IBI"
+          - " I "
+        Ingredients:
+          I: IRON_INGOT
+          B: BACKPACK:Copper
+        OutputMaterial: PLAYER_HEAD
+        DisplayName: "&6Iron Backpack"
+        Lore:
+          - "&7Iron Backpack that can carry 4 rows of items."
+          - "{backpackContents}"
+          - "{backpackId}"
+          - "{installedModules}"
+        CustomModelData: 1002
+        SkullData:
   Gold:
     Rows: 6
     UpgradeSlots: 3
@@ -94,6 +154,7 @@ BackpackTypes:
       - "{backpackId}"
       - "{installedModules}"
     CustomModelData: 1003
+    SkullData:
   Diamond:
     Rows: 8
     UpgradeSlots: 4
@@ -114,6 +175,7 @@ BackpackTypes:
       - "{backpackId}"
       - "{installedModules}"
     CustomModelData: 1004
+    SkullData:
   Netherite:
     Rows: 10
     UpgradeSlots: 5
@@ -130,6 +192,7 @@ BackpackTypes:
       - "{backpackId}"
       - "{installedModules}"
     CustomModelData: 1005
+    SkullData:
 
 # ScreenType can be one NONE, Crafting, Smelting, Blasting, Smoking, Stonecutter, Anvil, Smithing, Dropper, or Hopper.
 #

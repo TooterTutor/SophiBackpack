@@ -6,12 +6,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.logging.Level;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.MemoryConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -114,6 +116,10 @@ public final class RecipeManager implements Listener {
      * Crafting module GUI which bypasses normal crafting events.
      */
     public ItemStack createCraftResult(Player player, Recipe recipe) {
+        return createCraftResult(player, recipe, null);
+    }
+
+    public ItemStack createCraftResult(Player player, Recipe recipe, ItemStack[] matrix) {
         if (recipe == null)
             return null;
 
@@ -124,10 +130,42 @@ public final class RecipeManager implements Listener {
             return out == null ? null : out.clone();
         }
 
-        ItemStack result = switch (dyn.kind) {
-            case BACKPACK -> backpackItems.create(dyn.id);
-            case UPGRADE -> upgradeItems.create(dyn.id);
-        };
+        ItemStack result;
+
+        if (dyn.kind == DynamicKind.BACKPACK) {
+            UUID upgradeFromId = null;
+            String upgradeFromType = null;
+
+            SpecialRequirement baseReq = firstBackpackRequirement(dyn);
+            if (matrix != null && baseReq != null) {
+                BackpackMatrixRef ref = findBackpackInMatrix(matrix, baseReq.id);
+                if (ref != null) {
+                    upgradeFromId = ref.id;
+                    upgradeFromType = ref.typeId;
+                }
+            }
+
+            if (upgradeFromId != null) {
+                // Upgrading an existing backpack: keep UUID.
+                result = backpackItems.createExisting(upgradeFromId, dyn.id);
+
+                // Persist the type change while keeping contents/modules.
+                String oldType = plugin.repo().findBackpackType(upgradeFromId);
+                if (oldType == null || oldType.isBlank())
+                    oldType = upgradeFromType;
+                if (oldType == null || oldType.isBlank())
+                    oldType = dyn.id;
+
+                var data = plugin.repo().loadOrCreate(upgradeFromId, oldType);
+                data.backpackType(dyn.id);
+                plugin.repo().saveBackpack(data);
+            } else {
+                // New backpack (no base ingredient): new UUID.
+                result = backpackItems.create(dyn.id);
+            }
+        } else {
+            result = upgradeItems.create(dyn.id);
+        }
 
         if (dyn.kind == DynamicKind.BACKPACK) {
             ensureOwnedBackpackRow(player, result);
@@ -158,8 +196,7 @@ public final class RecipeManager implements Listener {
                 ConfigurationSection typeSec = backpackTypes.getConfigurationSection(typeId);
                 if (typeSec == null)
                     continue;
-                registerBackpackCraftingRecipe(typeId, typeSec);
-                registerBackpackSmithingRecipe(typeId, typeSec);
+                registerBackpackRecipes(typeId, typeSec);
             }
         }
 
@@ -178,15 +215,29 @@ public final class RecipeManager implements Listener {
     }
 
     private void registerBackpackCraftingRecipe(String typeId, ConfigurationSection typeSec) {
-        ConfigurationSection recipe = typeSec.getConfigurationSection("CraftingRecipe");
+        registerBackpackCraftingRecipeVariant(typeId, typeSec, "main",
+                typeSec == null ? null : typeSec.getConfigurationSection("CraftingRecipe"));
+    }
+
+    private void registerBackpackRecipes(String typeId, ConfigurationSection typeSec) {
+        for (RecipeVariant v : readRecipeVariants(typeSec)) {
+            String kind = v.section.getString("Type", "Crafting");
+            if ("Crafting".equalsIgnoreCase(kind)) {
+                registerBackpackCraftingRecipeVariant(typeId, typeSec, v.id, v.section);
+            } else if ("Smithing".equalsIgnoreCase(kind)) {
+                registerBackpackSmithingRecipeFromVariant(typeId, v.section);
+            }
+        }
+    }
+
+    private void registerBackpackCraftingRecipeVariant(String typeId, ConfigurationSection typeSec, String variantId,
+            ConfigurationSection recipe) {
         if (recipe == null)
             return;
 
         String kind = recipe.getString("Type", "Crafting");
-        if (!"Crafting".equalsIgnoreCase(kind)) {
-            // Smithing/other types handled via events later.
+        if (!"Crafting".equalsIgnoreCase(kind))
             return;
-        }
 
         List<String> pattern = recipe.getStringList("Pattern");
         if (pattern == null || pattern.isEmpty())
@@ -196,7 +247,8 @@ public final class RecipeManager implements Listener {
         if (typeDef == null)
             return;
 
-        NamespacedKey key = new NamespacedKey(plugin, "backpack_" + sanitize(typeId));
+        String suffix = (variantId == null || variantId.isBlank()) ? "main" : sanitize(variantId);
+        NamespacedKey key = new NamespacedKey(plugin, "backpack_" + sanitize(typeId) + "_" + suffix);
 
         ItemStack preview = new ItemStack(typeDef.outputMaterial());
         ItemMeta meta = preview.getItemMeta();
@@ -252,11 +304,12 @@ public final class RecipeManager implements Listener {
         if (Bukkit.addRecipe(shaped)) {
             registeredKeys.add(key);
             dynamic.put(key, new DynamicRecipe(DynamicKind.BACKPACK, typeId, requirements));
+        } else {
+            plugin.getLogger().warning("Failed to register crafting recipe: " + key);
         }
     }
 
-    private void registerBackpackSmithingRecipe(String resultTypeId, ConfigurationSection typeSec) {
-        ConfigurationSection recipe = typeSec.getConfigurationSection("CraftingRecipe");
+    private void registerBackpackSmithingRecipeFromVariant(String resultTypeId, ConfigurationSection recipe) {
         if (recipe == null)
             return;
 
@@ -501,7 +554,8 @@ public final class RecipeManager implements Listener {
             return;
         }
 
-        ItemStack result = createCraftResult(player, recipe);
+        ItemStack[] matrix = e.getInventory() != null ? e.getInventory().getMatrix() : null;
+        ItemStack result = createCraftResult(player, recipe, matrix);
         e.setCurrentItem(result);
     }
 
@@ -522,6 +576,19 @@ public final class RecipeManager implements Listener {
         if (addition == null || addition.getType().isAir())
             return;
 
+        // Only intervene if these inputs match one of our smithing upgrades.
+        SmithingUpgrade candidate = null;
+        for (SmithingUpgrade up : smithingUpgrades.values()) {
+            if (up == null)
+                continue;
+            if (template.getType() == up.template && addition.getType() == up.addition) {
+                candidate = up;
+                break;
+            }
+        }
+        if (candidate == null)
+            return;
+
         Keys keys = plugin.keys();
         String idStr = base.hasItemMeta()
                 ? base.getItemMeta().getPersistentDataContainer().get(keys.BACKPACK_ID, PersistentDataType.STRING)
@@ -529,28 +596,43 @@ public final class RecipeManager implements Listener {
         String baseTypeId = base.hasItemMeta()
                 ? base.getItemMeta().getPersistentDataContainer().get(keys.BACKPACK_TYPE, PersistentDataType.STRING)
                 : null;
-        if (idStr == null || baseTypeId == null)
+        if (idStr == null || baseTypeId == null) {
+            // Prevent the vanilla smithing recipe from accepting random heads.
+            e.setResult(null);
             return;
+        }
 
         UUIDUtils.Parsed parsed = UUIDUtils.tryParse(idStr);
-        if (parsed == null)
+        if (parsed == null) {
+            e.setResult(null);
             return;
+        }
 
+        SmithingUpgrade match = null;
         for (SmithingUpgrade up : smithingUpgrades.values()) {
-            if (!baseTypeId.equalsIgnoreCase(up.baseTypeId))
+            if (up == null)
                 continue;
             if (template.getType() != up.template)
                 continue;
             if (addition.getType() != up.addition)
                 continue;
-
-            var resultType = plugin.cfg().findType(up.resultTypeId);
-            if (resultType == null)
-                return;
-
-            e.setResult(backpackItems.createExisting(parsed.uuid(), resultType.id()));
+            if (!baseTypeId.equalsIgnoreCase(up.baseTypeId))
+                continue;
+            match = up;
+            break;
+        }
+        if (match == null) {
+            e.setResult(null);
             return;
         }
+
+        var resultType = plugin.cfg().findType(match.resultTypeId);
+        if (resultType == null) {
+            e.setResult(null);
+            return;
+        }
+
+        e.setResult(backpackItems.createExisting(parsed.uuid(), resultType.id()));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -756,6 +838,8 @@ public final class RecipeManager implements Listener {
         Keys keys = plugin.keys();
 
         if (req.kind == SpecialKind.BACKPACK_TYPE) {
+            if (!pdc.has(keys.BACKPACK_ID, PersistentDataType.STRING))
+                return false;
             String type = pdc.get(keys.BACKPACK_TYPE, PersistentDataType.STRING);
             return type != null && type.equalsIgnoreCase(req.id);
         }
@@ -794,6 +878,129 @@ public final class RecipeManager implements Listener {
     }
 
     private record SmithingUpgrade(String baseTypeId, String resultTypeId, Material template, Material addition) {
+    }
+
+    private record RecipeVariant(String id, ConfigurationSection section) {
+    }
+
+    private List<RecipeVariant> readRecipeVariants(ConfigurationSection typeSec) {
+        if (typeSec == null)
+            return List.of();
+
+        // Preferred: CraftingRecipe as section (old format OR keyed variants)
+        ConfigurationSection sec = typeSec.getConfigurationSection("CraftingRecipe");
+        if (sec != null) {
+            // Old format: CraftingRecipe has fields like Type/Pattern/Ingredients
+            if (sec.contains("Type") || sec.contains("Pattern") || sec.contains("Ingredients")) {
+                return List.of(new RecipeVariant("main", sec));
+            }
+
+            // New format: CraftingRecipe has child sections "1", "2", ...
+            java.util.ArrayList<RecipeVariant> out = new java.util.ArrayList<>();
+            for (String k : sec.getKeys(false)) {
+                ConfigurationSection child = sec.getConfigurationSection(k);
+                if (child != null) {
+                    out.add(new RecipeVariant(k, child));
+                }
+            }
+            if (!out.isEmpty())
+                return out;
+        }
+
+        // Alternative: CraftingRecipe is a YAML list:
+        // - wrapper map format:
+        //   CraftingRecipe:
+        //     - "1": { ... }
+        //     - "2": { ... }
+        // - direct map format:
+        //   CraftingRecipe:
+        //     - { Type: Crafting, Pattern: [...], Ingredients: {...} }
+        List<?> rawList = typeSec.getList("CraftingRecipe");
+        if (rawList == null || rawList.isEmpty())
+            return List.of();
+
+        java.util.ArrayList<RecipeVariant> out = new java.util.ArrayList<>();
+        int idx = 0;
+        for (Object elem : rawList) {
+            String fallbackId = Integer.toString(idx + 1);
+
+            ConfigurationSection direct = asSection(elem);
+            if (direct != null) {
+                out.add(new RecipeVariant(fallbackId, direct));
+                idx++;
+                continue;
+            }
+
+            if (elem instanceof Map<?, ?> wrapper && !wrapper.isEmpty()) {
+                // If this map looks like a recipe already, accept it directly.
+                if (wrapper.containsKey("Type") || wrapper.containsKey("Pattern") || wrapper.containsKey("Ingredients")) {
+                    ConfigurationSection child = asSection(wrapper);
+                    if (child != null)
+                        out.add(new RecipeVariant(fallbackId, child));
+                    idx++;
+                    continue;
+                }
+
+                for (Map.Entry<?, ?> e : wrapper.entrySet()) {
+                    String id = e.getKey() == null ? fallbackId : e.getKey().toString();
+                    ConfigurationSection child = asSection(e.getValue());
+                    if (child != null)
+                        out.add(new RecipeVariant(id, child));
+                }
+            }
+            idx++;
+        }
+        return out;
+    }
+
+    private static ConfigurationSection asSection(Object value) {
+        if (value == null)
+            return null;
+        if (value instanceof ConfigurationSection cs)
+            return cs;
+        if (value instanceof Map<?, ?> m) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) m;
+            MemoryConfiguration mem = new MemoryConfiguration();
+            return mem.createSection("r", typed);
+        }
+        return null;
+    }
+
+    private record BackpackMatrixRef(UUID id, String typeId) {
+    }
+
+    private static SpecialRequirement firstBackpackRequirement(DynamicRecipe dyn) {
+        if (dyn == null || dyn.requirements == null)
+            return null;
+        for (SpecialRequirement req : dyn.requirements) {
+            if (req != null && req.kind == SpecialKind.BACKPACK_TYPE)
+                return req;
+        }
+        return null;
+    }
+
+    private BackpackMatrixRef findBackpackInMatrix(ItemStack[] matrix, String requiredTypeId) {
+        if (matrix == null || requiredTypeId == null || requiredTypeId.isBlank())
+            return null;
+        Keys keys = plugin.keys();
+        for (ItemStack it : matrix) {
+            if (it == null || it.getType().isAir() || !it.hasItemMeta())
+                continue;
+            ItemMeta meta = it.getItemMeta();
+            if (meta == null)
+                continue;
+            var pdc = meta.getPersistentDataContainer();
+            String typeId = pdc.get(keys.BACKPACK_TYPE, PersistentDataType.STRING);
+            if (typeId == null || !typeId.equalsIgnoreCase(requiredTypeId))
+                continue;
+            String idStr = pdc.get(keys.BACKPACK_ID, PersistentDataType.STRING);
+            UUIDUtils.Parsed parsed = UUIDUtils.tryParse(idStr);
+            if (parsed == null)
+                continue;
+            return new BackpackMatrixRef(parsed.uuid(), typeId);
+        }
+        return null;
     }
 
     private static final class UUIDUtils {

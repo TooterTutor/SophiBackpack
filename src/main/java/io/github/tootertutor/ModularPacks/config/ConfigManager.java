@@ -1,10 +1,13 @@
 package io.github.tootertutor.ModularPacks.config;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
@@ -25,6 +28,9 @@ public final class ConfigManager {
 
     // Debug
     private boolean debugClickLog = false;
+
+    // Item types that cannot be inserted into backpacks (e.g. by Magnet)
+    private Set<Material> backpackInsertBlacklist = Set.of();
 
     // Backpack types by name
     private final Map<String, BackpackTypeDef> types = new HashMap<>();
@@ -56,6 +62,15 @@ public final class ConfigManager {
                 cfg.getString("modularpacks.LockedUpgradeSlotMaterial", "IRON_BARS"),
                 Material.IRON_BARS);
 
+        // Global insert blacklist (Magnet respects this; other insertion paths may as well)
+        Set<Material> bl = new HashSet<>();
+        for (String raw : cfg.getStringList("modularpacks.BackpackInsertBlacklist")) {
+            Material m = parseMaterial(raw);
+            if (m != null)
+                bl.add(m);
+        }
+        backpackInsertBlacklist = Collections.unmodifiableSet(bl);
+
         // Backpack types
         ConfigurationSection typesSec = cfg.getConfigurationSection("BackpackTypes");
         if (typesSec != null) {
@@ -66,12 +81,12 @@ public final class ConfigManager {
 
                 int rows = s.getInt("Rows", 2);
                 int upgradeSlots = s.getInt("UpgradeSlots", 0);
-                String displayName = s.getString("DisplayName", key);
-                List<String> lore = s.getStringList("Lore");
-                int customModelData = s.getInt("CustomModelData", 0);
+                String displayName = firstString(s, "DisplayName", key);
+                List<String> lore = firstStringList(s, "Lore");
+                int customModelData = firstInt(s, "CustomModelData", 0);
 
                 Material output = mat(
-                        s.getString("CraftingRecipe.OutputMaterial", "PLAYER_HEAD"),
+                        firstString(s, "OutputMaterial", s.getString("CraftingRecipe.OutputMaterial", "PLAYER_HEAD")),
                         Material.PLAYER_HEAD);
 
                 types.put(key.toLowerCase(Locale.ROOT),
@@ -112,6 +127,10 @@ public final class ConfigManager {
         return debugClickLog;
     }
 
+    public Set<Material> backpackInsertBlacklist() {
+        return backpackInsertBlacklist;
+    }
+
     private static Material mat(String name, Material fallback) {
         if (name == null)
             return fallback;
@@ -130,6 +149,104 @@ public final class ConfigManager {
         }
         s = s.trim().replace(' ', '_').toUpperCase(Locale.ROOT);
         return Material.getMaterial(s);
+    }
+
+    private static ConfigurationSection firstRecipeSection(ConfigurationSection typeSec) {
+        if (typeSec == null)
+            return null;
+
+        ConfigurationSection sec = typeSec.getConfigurationSection("CraftingRecipe");
+        if (sec != null) {
+            if (sec.contains("Type") || sec.contains("Pattern") || sec.contains("Ingredients") || sec.contains("OutputMaterial")
+                    || sec.contains("DisplayName") || sec.contains("Lore") || sec.contains("CustomModelData")) {
+                return sec;
+            }
+            for (String k : sec.getKeys(false)) {
+                ConfigurationSection child = sec.getConfigurationSection(k);
+                if (child != null)
+                    return child;
+            }
+        }
+
+        List<?> rawList = typeSec.getList("CraftingRecipe");
+        if (rawList != null) {
+            for (Object elem : rawList) {
+                ConfigurationSection direct = asSection(elem);
+                if (direct != null)
+                    return direct;
+                if (elem instanceof Map<?, ?> wrapper) {
+                    if (wrapper.containsKey("Type") || wrapper.containsKey("Pattern") || wrapper.containsKey("Ingredients")
+                            || wrapper.containsKey("OutputMaterial") || wrapper.containsKey("DisplayName")
+                            || wrapper.containsKey("Lore") || wrapper.containsKey("CustomModelData")) {
+                        ConfigurationSection cs = asSection(wrapper);
+                        if (cs != null)
+                            return cs;
+                    }
+                    for (Object v : wrapper.values()) {
+                        ConfigurationSection cs = asSection(v);
+                        if (cs != null)
+                            return cs;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static ConfigurationSection asSection(Object value) {
+        if (value == null)
+            return null;
+        if (value instanceof ConfigurationSection cs)
+            return cs;
+        if (value instanceof Map<?, ?> m) {
+            org.bukkit.configuration.MemoryConfiguration mem = new org.bukkit.configuration.MemoryConfiguration();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) m;
+            return mem.createSection("r", typed);
+        }
+        return null;
+    }
+
+    private static String firstString(ConfigurationSection typeSec, String path, String fallback) {
+        if (typeSec == null)
+            return fallback;
+        String v = typeSec.getString(path, null);
+        if (v != null)
+            return v;
+        ConfigurationSection first = firstRecipeSection(typeSec);
+        if (first != null) {
+            String v2 = first.getString(path, null);
+            if (v2 != null)
+                return v2;
+        }
+        return fallback;
+    }
+
+    private static int firstInt(ConfigurationSection typeSec, String path, int fallback) {
+        if (typeSec == null)
+            return fallback;
+        if (typeSec.contains(path))
+            return typeSec.getInt(path, fallback);
+        ConfigurationSection first = firstRecipeSection(typeSec);
+        if (first != null && first.contains(path))
+            return first.getInt(path, fallback);
+        return fallback;
+    }
+
+    private static List<String> firstStringList(ConfigurationSection typeSec, String path) {
+        if (typeSec == null)
+            return List.of();
+        List<String> v = typeSec.getStringList(path);
+        if (v != null && !v.isEmpty())
+            return v;
+        ConfigurationSection first = firstRecipeSection(typeSec);
+        if (first != null) {
+            List<String> v2 = first.getStringList(path);
+            if (v2 != null && !v2.isEmpty())
+                return v2;
+        }
+        return List.of();
     }
 
     public BackpackTypeDef getType(String input) {
