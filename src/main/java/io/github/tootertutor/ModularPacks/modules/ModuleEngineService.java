@@ -5,11 +5,13 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
@@ -27,21 +29,23 @@ import org.bukkit.inventory.meta.components.FoodComponent;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.potion.PotionEffectTypeCategory;
 import org.bukkit.scheduler.BukkitTask;
 
+import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
+import io.github.tootertutor.ModularPacks.config.ScreenType;
+import io.github.tootertutor.ModularPacks.data.BackpackData;
+import io.github.tootertutor.ModularPacks.data.ItemStackCodec;
+import io.github.tootertutor.ModularPacks.data.SQLiteBackpackRepository.VoidedItemRecord;
+import io.github.tootertutor.ModularPacks.gui.BackpackMenuHolder;
+import io.github.tootertutor.ModularPacks.gui.ModuleScreenHolder;
+import io.github.tootertutor.ModularPacks.item.Keys;
 import io.papermc.paper.datacomponent.DataComponentTypes;
 import io.papermc.paper.datacomponent.item.Consumable;
 import io.papermc.paper.datacomponent.item.FoodProperties;
 import io.papermc.paper.datacomponent.item.SuspiciousStewEffects;
 import io.papermc.paper.datacomponent.item.consumable.ConsumeEffect;
 import io.papermc.paper.potion.SuspiciousEffectEntry;
-import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
-import io.github.tootertutor.ModularPacks.config.ScreenType;
-import io.github.tootertutor.ModularPacks.data.BackpackData;
-import io.github.tootertutor.ModularPacks.data.ItemStackCodec;
-import io.github.tootertutor.ModularPacks.gui.BackpackMenuHolder;
-import io.github.tootertutor.ModularPacks.gui.ModuleScreenHolder;
-import io.github.tootertutor.ModularPacks.item.Keys;
 
 /**
  * Engine ticks ONLY currently-open module screens (Option 2).
@@ -184,23 +188,23 @@ public final class ModuleEngineService {
 
         boolean changedAny = false;
 
-        // Passive modules that mutate backpack contents (skip while that backpack GUI is open)
+        // Passive modules that mutate backpack contents (skip while that backpack GUI
+        // is open)
         if (allowContentsMutations) {
             ItemStack[] logical = ensureLogicalContentsSize(data, typeDef.rows() * 9);
 
             UUID voidId = findInstalledModuleId(data, "Void");
-            if (voidId != null) {
-                changedAny |= applyVoid(logical, readWhitelistFromState(data, voidId));
-            }
+            Set<Material> voidWhitelist = (voidId == null) ? Set.of() : readWhitelistFromState(data, voidId);
 
             UUID feedingId = findInstalledModuleId(data, "Feeding");
             if (feedingId != null) {
-                changedAny |= applyFeeding(player, logical, readWhitelistFromState(data, feedingId));
+                changedAny |= applyFeeding(player, logical, data, feedingId);
             }
 
-            UUID magnetId = findInstalledModuleId(data, "Magnetic");
+            UUID magnetId = findInstalledModuleId(data, "Magnet");
             if (magnetId != null) {
-                changedAny |= applyMagnet(player, logical, readWhitelistFromState(data, magnetId));
+                changedAny |= applyMagnet(player, logical, readWhitelistFromState(data, magnetId),
+                        backpackId, backpackType, voidId, voidWhitelist);
             }
 
             if (changedAny) {
@@ -267,7 +271,8 @@ public final class ModuleEngineService {
             if (meta == null)
                 continue;
 
-            String moduleType = meta.getPersistentDataContainer().get(plugin.keys().MODULE_TYPE, PersistentDataType.STRING);
+            String moduleType = meta.getPersistentDataContainer().get(plugin.keys().MODULE_TYPE,
+                    PersistentDataType.STRING);
             if (moduleType == null || !moduleType.equalsIgnoreCase(targetModuleType))
                 continue;
 
@@ -319,29 +324,28 @@ public final class ModuleEngineService {
         return out;
     }
 
-    private boolean applyVoid(ItemStack[] contents, Set<Material> whitelist) {
-        if (contents == null || whitelist == null)
-            return false;
+    private List<Material> readWhitelistOrderedFromState(BackpackData data, UUID moduleId) {
+        if (data == null || moduleId == null)
+            return java.util.Collections.emptyList();
+        byte[] bytes = data.moduleStates().get(moduleId);
+        if (bytes == null || bytes.length == 0)
+            return java.util.Collections.emptyList();
 
-        // Safeguard: never void everything by accident
-        if (whitelist.isEmpty())
-            return false;
+        ItemStack[] arr = ItemStackCodec.fromBytes(bytes);
+        if (arr == null || arr.length == 0)
+            return java.util.Collections.emptyList();
 
-        boolean changed = false;
-        for (int i = 0; i < contents.length; i++) {
-            ItemStack it = contents[i];
+        java.util.LinkedHashSet<Material> seen = new java.util.LinkedHashSet<>();
+        for (ItemStack it : arr) {
             if (it == null || it.getType().isAir())
                 continue;
-            if (!whitelist.contains(it.getType()))
-                continue;
-            contents[i] = null;
-            changed = true;
+            seen.add(it.getType());
         }
-        return changed;
+        return new java.util.ArrayList<>(seen);
     }
 
-    private boolean applyFeeding(Player player, ItemStack[] contents, Set<Material> whitelist) {
-        if (player == null || contents == null || whitelist == null)
+    private boolean applyFeeding(Player player, ItemStack[] contents, BackpackData data, UUID moduleId) {
+        if (player == null || contents == null || data == null || moduleId == null)
             return false;
 
         int minFood = Math.max(0, Math.min(20, plugin.getConfig().getInt("Upgrades.Feeding.MinFoodLevel", 18)));
@@ -355,14 +359,25 @@ public final class ModuleEngineService {
         if (now - lastFed < cooldown)
             return false;
 
-        int needed = Math.max(1, minFood - foodLevel);
-        int bestIndex = -1;
-        int bestOvershoot = Integer.MAX_VALUE;
-        float bestSaturationPoints = -1.0f;
+        FeedingSettings settings = readFeedingSettings(data, moduleId);
+        List<Material> orderedWhitelist = readWhitelistOrderedFromState(data, moduleId);
 
-        int fallbackIndex = -1;
-        int fallbackNutrition = -1;
-        float fallbackSaturationPoints = -1.0f;
+        // If whitelist-order is selected but no whitelist is configured, behave like
+        // best-candidate.
+        if (settings.mode == FeedingSelectionMode.WHITELIST_ORDER && !orderedWhitelist.isEmpty()) {
+            int chosen = chooseFeedingByWhitelistOrder(contents, orderedWhitelist, settings.preference, minFood,
+                    foodLevel);
+            if (chosen < 0)
+                return false;
+            return consumeFeeding(player, contents, chosen, minFood, foodLevel, settings, now);
+        }
+
+        java.util.Set<Material> whitelistSet = orderedWhitelist.isEmpty()
+                ? java.util.Collections.emptySet()
+                : new java.util.HashSet<>(orderedWhitelist);
+
+        CandidatePick good = new CandidatePick();
+        CandidatePick bad = new CandidatePick();
 
         for (int i = 0; i < contents.length; i++) {
             ItemStack it = contents[i];
@@ -370,7 +385,7 @@ public final class ModuleEngineService {
                 continue;
             if (!it.getType().isEdible())
                 continue;
-            if (!whitelist.isEmpty() && !whitelist.contains(it.getType()))
+            if (!whitelistSet.isEmpty() && !whitelistSet.contains(it.getType()))
                 continue;
 
             FoodValues v = FoodValues.lookup(it);
@@ -381,32 +396,40 @@ public final class ModuleEngineService {
             float satPoints = saturationPoints(nutrition, v.saturation());
             int overshoot = (foodLevel + nutrition) - minFood;
 
-            // Prefer foods that get us to (or above) minFood with minimal overshoot.
-            if (overshoot >= 0) {
-                if (overshoot < bestOvershoot || (overshoot == bestOvershoot && satPoints > bestSaturationPoints)) {
-                    bestIndex = i;
-                    bestOvershoot = overshoot;
-                    bestSaturationPoints = satPoints;
-                }
-                continue;
-            }
-
-            // Otherwise, pick the largest nutrition food so we reach the threshold faster.
-            if (nutrition > fallbackNutrition || (nutrition == fallbackNutrition && satPoints > fallbackSaturationPoints)) {
-                fallbackIndex = i;
-                fallbackNutrition = nutrition;
-                fallbackSaturationPoints = satPoints;
-            }
+            boolean harmful = settings.preference == FeedingPreference.EFFECTS && hasHarmfulFoodEffects(it);
+            CandidatePick pick = harmful ? bad : good;
+            pick.consider(i, nutrition, satPoints, overshoot, settings.preference);
         }
 
-        int index = bestIndex >= 0 ? bestIndex : fallbackIndex;
-        if (index < 0)
+        int chosen;
+        if (settings.preference == FeedingPreference.EFFECTS) {
+            chosen = good.bestIndex >= 0 ? good.bestIndex : good.fallbackIndex;
+            if (chosen < 0) {
+                chosen = bad.bestIndex >= 0 ? bad.bestIndex : bad.fallbackIndex;
+            }
+        } else {
+            chosen = good.bestIndex >= 0 ? good.bestIndex : good.fallbackIndex;
+        }
+
+        if (chosen < 0)
             return false;
 
+        return consumeFeeding(player, contents, chosen, minFood, foodLevel, settings, now);
+    }
+
+    private boolean consumeFeeding(
+            Player player,
+            ItemStack[] contents,
+            int index,
+            int minFood,
+            int beforeFood,
+            FeedingSettings settings,
+            int now) {
         ItemStack it = contents[index];
+        if (it == null || it.getType().isAir())
+            return false;
 
         boolean debug = plugin.getConfig().getBoolean("Upgrades.Feeding.Debug", false);
-        int beforeFood = player.getFoodLevel();
         float beforeSat = player.getSaturation();
 
         // Consume one item
@@ -433,7 +456,7 @@ public final class ModuleEngineService {
             int nutrition = v.nutrition();
             float satPoints = saturationPoints(nutrition, v.saturation());
             plugin.getLogger().info(String.format(
-                    "[Feeding] %s ate %s: food %d->%d, sat %.2f->%.2f (nutrition=%d, sat=%.3f, satPts=%.2f, effects=%d, minFood=%d, needed=%d)",
+                    "[Feeding] %s ate %s: food %d->%d, sat %.2f->%.2f (nutrition=%d, sat=%.3f, satPts=%.2f, harmful=%s, effects=%d, mode=%s, pref=%s, minFood=%d)",
                     player.getName(),
                     it.getType().name(),
                     beforeFood,
@@ -443,26 +466,255 @@ public final class ModuleEngineService {
                     nutrition,
                     v.saturation(),
                     satPoints,
+                    hasHarmfulFoodEffects(it),
                     effectsApplied,
-                    minFood,
-                    needed));
+                    settings.mode,
+                    settings.preference,
+                    minFood));
         }
 
         lastFedTickByPlayer.put(player.getUniqueId(), now);
         return true;
     }
 
-    private boolean applyMagnet(Player player, ItemStack[] contents, Set<Material> whitelist) {
+    private int chooseFeedingByWhitelistOrder(
+            ItemStack[] contents,
+            List<Material> orderedWhitelist,
+            FeedingPreference preference,
+            int minFood,
+            int foodLevel) {
+        if (contents == null || orderedWhitelist == null || orderedWhitelist.isEmpty())
+            return -1;
+
+        for (Material mat : orderedWhitelist) {
+            if (mat == null || mat.isAir())
+                continue;
+
+            CandidatePick good = new CandidatePick();
+            CandidatePick bad = new CandidatePick();
+
+            for (int i = 0; i < contents.length; i++) {
+                ItemStack it = contents[i];
+                if (it == null || it.getType().isAir())
+                    continue;
+                if (it.getType() != mat)
+                    continue;
+                if (!it.getType().isEdible())
+                    continue;
+
+                FoodValues v = FoodValues.lookup(it);
+                int nutrition = v.nutrition();
+                if (nutrition <= 0)
+                    continue;
+
+                float satPoints = saturationPoints(nutrition, v.saturation());
+                int overshoot = (foodLevel + nutrition) - minFood;
+
+                boolean harmful = preference == FeedingPreference.EFFECTS && hasHarmfulFoodEffects(it);
+                CandidatePick pick = harmful ? bad : good;
+                pick.consider(i, nutrition, satPoints, overshoot, preference);
+            }
+
+            if (preference == FeedingPreference.EFFECTS) {
+                int chosen = good.bestIndex >= 0 ? good.bestIndex : good.fallbackIndex;
+                if (chosen >= 0)
+                    return chosen;
+                chosen = bad.bestIndex >= 0 ? bad.bestIndex : bad.fallbackIndex;
+                if (chosen >= 0)
+                    return chosen;
+                continue;
+            }
+
+            int chosen = good.bestIndex >= 0 ? good.bestIndex : good.fallbackIndex;
+            if (chosen >= 0)
+                return chosen;
+        }
+
+        return -1;
+    }
+
+    private FeedingSettings readFeedingSettings(BackpackData data, UUID moduleId) {
+        FeedingSelectionMode defaultMode = FeedingSelectionMode
+                .parse(plugin.getConfig().getString("Upgrades.Feeding.SelectionMode", "BestCandidate"));
+        FeedingPreference defaultPref = FeedingPreference
+                .parse(plugin.getConfig().getString("Upgrades.Feeding.Preference", "Nutrition"));
+
+        ItemStack snap = resolveModuleSnapshotItem(data, moduleId);
+        if (snap == null || !snap.hasItemMeta()) {
+            return new FeedingSettings(defaultMode, defaultPref);
+        }
+
+        ItemMeta meta = snap.getItemMeta();
+        if (meta == null) {
+            return new FeedingSettings(defaultMode, defaultPref);
+        }
+
+        var pdc = meta.getPersistentDataContainer();
+        Keys keys = plugin.keys();
+
+        FeedingSelectionMode mode = FeedingSelectionMode
+                .parse(pdc.get(keys.MODULE_FEEDING_SELECTION_MODE, PersistentDataType.STRING));
+        FeedingPreference pref = FeedingPreference
+                .parse(pdc.get(keys.MODULE_FEEDING_PREFERENCE, PersistentDataType.STRING));
+
+        if (mode == null)
+            mode = defaultMode;
+        if (pref == null)
+            pref = defaultPref;
+
+        return new FeedingSettings(mode, pref);
+    }
+
+    private boolean hasHarmfulFoodEffects(ItemStack foodItem) {
+        if (foodItem == null || foodItem.getType().isAir())
+            return false;
+
+        try {
+            Consumable consumable = foodItem.getData(DataComponentTypes.CONSUMABLE);
+            if (consumable != null) {
+                for (ConsumeEffect effect : consumable.consumeEffects()) {
+                    if (!(effect instanceof ConsumeEffect.ApplyStatusEffects ase))
+                        continue;
+                    float prob = ase.probability();
+                    if (prob <= 0.0f)
+                        continue;
+
+                    for (Object o : ase.effects()) {
+                        if (!(o instanceof PotionEffect pe))
+                            continue;
+                        PotionEffectType type = pe.getType();
+                        if (type != null && type.getCategory() == PotionEffectTypeCategory.HARMFUL) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            SuspiciousStewEffects stew = foodItem.getData(DataComponentTypes.SUSPICIOUS_STEW_EFFECTS);
+            if (stew != null) {
+                for (SuspiciousEffectEntry e : stew.effects()) {
+                    PotionEffectType type = e.effect();
+                    if (type != null && type.getCategory() == PotionEffectTypeCategory.HARMFUL) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        return false;
+    }
+
+    private static final class CandidatePick {
+        int bestIndex = -1;
+        int bestOvershoot = Integer.MAX_VALUE;
+        int bestNutrition = -1;
+        float bestSatPoints = -1.0f;
+
+        int fallbackIndex = -1;
+        int fallbackNutrition = -1;
+        float fallbackSatPoints = -1.0f;
+
+        void consider(int index, int nutrition, float satPoints, int overshoot, FeedingPreference preference) {
+            if (overshoot >= 0) {
+                if (overshoot < bestOvershoot
+                        || (overshoot == bestOvershoot && isBetterTie(nutrition, satPoints, preference))) {
+                    bestIndex = index;
+                    bestOvershoot = overshoot;
+                    bestNutrition = nutrition;
+                    bestSatPoints = satPoints;
+                }
+                return;
+            }
+
+            if (nutrition > fallbackNutrition || (nutrition == fallbackNutrition && satPoints > fallbackSatPoints)) {
+                fallbackIndex = index;
+                fallbackNutrition = nutrition;
+                fallbackSatPoints = satPoints;
+            }
+        }
+
+        private boolean isBetterTie(int nutrition, float satPoints, FeedingPreference preference) {
+            if (preference == FeedingPreference.NUTRITION) {
+                if (nutrition != bestNutrition)
+                    return nutrition > bestNutrition;
+                return satPoints > bestSatPoints;
+            }
+            if (satPoints != bestSatPoints)
+                return satPoints > bestSatPoints;
+            return nutrition > bestNutrition;
+        }
+    }
+
+    private enum FeedingSelectionMode {
+        BEST_CANDIDATE,
+        WHITELIST_ORDER;
+
+        static FeedingSelectionMode parse(String raw) {
+            if (raw == null)
+                return BEST_CANDIDATE;
+            String s = raw.trim().toUpperCase(java.util.Locale.ROOT);
+            if (s.isEmpty())
+                return BEST_CANDIDATE;
+            return switch (s) {
+                case "BEST", "BESTCANDIDATE", "BEST_CANDIDATE" -> BEST_CANDIDATE;
+                case "WHITELIST", "WHITELISTORDER", "WHITELIST_ORDER", "PREFER_FIRST_IN_WHITELIST" -> WHITELIST_ORDER;
+                default -> BEST_CANDIDATE;
+            };
+        }
+    }
+
+    private enum FeedingPreference {
+        NUTRITION,
+        EFFECTS;
+
+        static FeedingPreference parse(String raw) {
+            if (raw == null)
+                return NUTRITION;
+            String s = raw.trim().toUpperCase(java.util.Locale.ROOT);
+            if (s.isEmpty())
+                return NUTRITION;
+            return switch (s) {
+                case "EFFECT", "EFFECTS" -> EFFECTS;
+                default -> NUTRITION;
+            };
+        }
+    }
+
+    private static final class FeedingSettings {
+        final FeedingSelectionMode mode;
+        final FeedingPreference preference;
+
+        FeedingSettings(FeedingSelectionMode mode, FeedingPreference preference) {
+            this.mode = (mode == null ? FeedingSelectionMode.BEST_CANDIDATE : mode);
+            this.preference = (preference == null ? FeedingPreference.NUTRITION : preference);
+        }
+    }
+
+    private boolean applyMagnet(
+            Player player,
+            ItemStack[] contents,
+            Set<Material> whitelist,
+            UUID backpackId,
+            String backpackType,
+            UUID voidModuleId,
+            Set<Material> voidWhitelist) {
         if (player == null || contents == null || whitelist == null)
             return false;
 
-        double range = plugin.getConfig().getDouble("Upgrades.Magnetic.Range", 6.0);
+        double range = plugin.getConfig().getDouble("Upgrades.Magnet.Range", 6.0);
         if (range <= 0.1)
             return false;
-        int maxEntities = Math.max(1, Math.min(256, plugin.getConfig().getInt("Upgrades.Magnetic.MaxItemsPerTick", 32)));
+        int maxEntities = Math.max(1,
+                Math.min(256, plugin.getConfig().getInt("Upgrades.Magnet.MaxItemsPerTick", 32)));
 
         boolean changed = false;
         int processed = 0;
+
+        boolean voidActive = backpackId != null && voidModuleId != null && voidWhitelist != null && !voidWhitelist.isEmpty();
 
         for (Entity ent : player.getNearbyEntities(range, range, range)) {
             if (processed >= maxEntities)
@@ -477,6 +729,17 @@ public final class ModuleEngineService {
                 continue;
             if (!whitelist.isEmpty() && !whitelist.contains(stack.getType()))
                 continue;
+
+            if (voidActive && voidWhitelist.contains(stack.getType()) && !isProtectedFromVoid(stack)) {
+                boolean logged = tryLogVoidedItem(player, backpackId, backpackType, voidModuleId, stack, itemEnt.getLocation());
+                if (logged) {
+                    itemEnt.remove();
+                    changed = true;
+                    processed++;
+                }
+                // Only affects magnet pickups; do not fall through to insertion.
+                continue;
+            }
 
             ItemStack remainder = insertIntoContents(contents, stack.clone());
             if (remainder == null || remainder.getType().isAir() || remainder.getAmount() <= 0) {
@@ -495,6 +758,67 @@ public final class ModuleEngineService {
         }
 
         return changed;
+    }
+
+    private boolean isProtectedFromVoid(ItemStack stack) {
+        if (stack == null || stack.getType().isAir() || !stack.hasItemMeta())
+            return false;
+        ItemMeta meta = stack.getItemMeta();
+        if (meta == null)
+            return false;
+        var pdc = meta.getPersistentDataContainer();
+        Keys keys = plugin.keys();
+        return pdc.has(keys.BACKPACK_ID, PersistentDataType.STRING)
+                || pdc.has(keys.MODULE_ID, PersistentDataType.STRING);
+    }
+
+    private boolean tryLogVoidedItem(
+            Player player,
+            UUID backpackId,
+            String backpackType,
+            UUID voidModuleId,
+            ItemStack stack,
+            Location loc) {
+        if (player == null || backpackId == null || voidModuleId == null || stack == null || stack.getType().isAir())
+            return false;
+
+        byte[] bytes;
+        try {
+            bytes = ItemStackCodec.toBytes(new ItemStack[] { stack.clone() });
+        } catch (Exception ex) {
+            plugin.getLogger().warning("Failed to serialize voided item: " + ex.getMessage());
+            return false;
+        }
+
+        String world = (loc == null || loc.getWorld() == null) ? null : loc.getWorld().getName();
+        Double x = loc == null ? null : loc.getX();
+        Double y = loc == null ? null : loc.getY();
+        Double z = loc == null ? null : loc.getZ();
+
+        try {
+            long id = plugin.repo().logVoidedItem(new VoidedItemRecord(
+                    null,
+                    System.currentTimeMillis(),
+                    player.getUniqueId().toString(),
+                    player.getName(),
+                    backpackId.toString(),
+                    backpackType,
+                    voidModuleId.toString(),
+                    stack.getType().name(),
+                    stack.getAmount(),
+                    bytes,
+                    world,
+                    x,
+                    y,
+                    z,
+                    null,
+                    null,
+                    null));
+            return id > 0;
+        } catch (Exception ex) {
+            plugin.getLogger().warning("Failed to log voided item to DB: " + ex.getMessage());
+            return false;
+        }
     }
 
     private ItemStack insertIntoContents(ItemStack[] contents, ItemStack stack) {
@@ -566,7 +890,8 @@ public final class ModuleEngineService {
 
         int applied = 0;
 
-        // General consumable effects (covers things like Rotten Flesh, Golden Apples, Chorus Fruit, etc.)
+        // General consumable effects (covers things like Rotten Flesh, Golden Apples,
+        // Chorus Fruit, etc.)
         try {
             Consumable consumable = foodItem.getData(DataComponentTypes.CONSUMABLE);
             if (consumable != null) {
@@ -633,7 +958,8 @@ public final class ModuleEngineService {
             if (stack == null || stack.getType().isAir())
                 return new FoodValues(0, 0.0f);
 
-            // Paper data components: works for all vanilla food items (and custom food components).
+            // Paper data components: works for all vanilla food items (and custom food
+            // components).
             try {
                 FoodProperties fp = stack.getData(DataComponentTypes.FOOD);
                 if (fp != null) {
