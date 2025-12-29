@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.Level;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -21,12 +22,16 @@ import org.bukkit.event.inventory.PrepareSmithingEvent;
 import org.bukkit.event.inventory.SmithItemEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
+import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.SmithingInventory;
+import org.bukkit.inventory.SmithingTransformRecipe;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
+import io.github.tootertutor.ModularPacks.config.BackpackTypeDef;
 import io.github.tootertutor.ModularPacks.config.Placeholders;
 import io.github.tootertutor.ModularPacks.item.BackpackItems;
 import io.github.tootertutor.ModularPacks.item.Keys;
@@ -63,6 +68,72 @@ public final class RecipeManager implements Listener {
     public void reload() {
         unregisterAll();
         registerAll();
+        try {
+            Bukkit.updateRecipes();
+        } catch (Throwable t) {
+            plugin.getLogger().log(Level.WARNING,
+                    "Failed to update recipes; clients may not see new recipes until relog.",
+                    t);
+        }
+    }
+
+    public boolean isDynamicRecipe(Recipe recipe) {
+        NamespacedKey key = recipeKey(recipe);
+        if (key == null)
+            return false;
+        return dynamic.containsKey(key);
+    }
+
+    public boolean validateDynamicIngredients(Recipe recipe, ItemStack[] matrix) {
+        NamespacedKey key = recipeKey(recipe);
+        DynamicRecipe dyn = key == null ? null : dynamic.get(key);
+        if (dyn == null)
+            return true;
+        if (dyn.requirements == null || dyn.requirements.isEmpty())
+            return true;
+        if (matrix == null)
+            return false;
+
+        for (SpecialRequirement req : dyn.requirements) {
+            int have = 0;
+            for (ItemStack it : matrix) {
+                if (matchesRequirement(it, req))
+                    have++;
+            }
+            if (have < req.requiredCount)
+                return false;
+        }
+        return true;
+    }
+
+    /**
+     * Returns the correct crafting result for the given recipe, including dynamic
+     * UUID-bearing items for ModularPacks backpacks/modules.
+     *
+     * This is used both by vanilla crafting (CraftItemEvent) and by the in-backpack
+     * Crafting module GUI which bypasses normal crafting events.
+     */
+    public ItemStack createCraftResult(Player player, Recipe recipe) {
+        if (recipe == null)
+            return null;
+
+        NamespacedKey key = recipeKey(recipe);
+        DynamicRecipe dyn = key == null ? null : dynamic.get(key);
+        if (dyn == null) {
+            ItemStack out = recipe.getResult();
+            return out == null ? null : out.clone();
+        }
+
+        ItemStack result = switch (dyn.kind) {
+            case BACKPACK -> backpackItems.create(dyn.id);
+            case UPGRADE -> upgradeItems.create(dyn.id);
+        };
+
+        if (dyn.kind == DynamicKind.BACKPACK) {
+            ensureOwnedBackpackRow(player, result);
+        }
+
+        return result;
     }
 
     public void close() {
@@ -137,23 +208,44 @@ public final class RecipeManager implements Listener {
         ShapedRecipe shaped = new ShapedRecipe(key, preview);
         shaped.shape(pattern.toArray(new String[0]));
 
+        Map<Character, Integer> symbolCounts = countSymbols(pattern);
+        List<SpecialRequirement> requirements = new java.util.ArrayList<>();
+
         ConfigurationSection ing = recipe.getConfigurationSection("Ingredients");
         if (ing != null) {
             for (String k : ing.getKeys(false)) {
                 if (k == null || k.length() != 1)
                     continue;
                 char symbol = k.charAt(0);
-                String matName = ing.getString(k);
-                Material m = Material.matchMaterial(matName == null ? "" : matName);
-                if (m != null) {
+                String raw = ing.getString(k);
+                ParsedIngredient parsed = parseIngredient(raw);
+
+                if (parsed.kind == IngredientKind.MATERIAL) {
+                    if (parsed.material != null)
+                        shaped.setIngredient(symbol, parsed.material);
+                    continue;
+                }
+
+                int requiredCount = symbolCounts.getOrDefault(symbol, 0);
+                if (requiredCount <= 0)
+                    continue;
+
+                // Register as a vanilla material so the recipe can be discovered; we
+                // enforce the real requirement in PrepareItemCraftEvent/CraftItemEvent.
+                if (parsed.kind == IngredientKind.BACKPACK_TYPE) {
+                    shaped.setIngredient(symbol, Material.PLAYER_HEAD);
+                    requirements.add(new SpecialRequirement(SpecialKind.BACKPACK_TYPE, parsed.id, requiredCount));
+                } else if (parsed.kind == IngredientKind.MODULE_TYPE) {
+                    Material m = parsed.material != null ? parsed.material : Material.PAPER;
                     shaped.setIngredient(symbol, m);
+                    requirements.add(new SpecialRequirement(SpecialKind.MODULE_TYPE, parsed.id, requiredCount));
                 }
             }
         }
 
         if (Bukkit.addRecipe(shaped)) {
             registeredKeys.add(key);
-            dynamic.put(key, new DynamicRecipe(DynamicKind.BACKPACK, typeId));
+            dynamic.put(key, new DynamicRecipe(DynamicKind.BACKPACK, typeId, requirements));
         }
     }
 
@@ -172,14 +264,24 @@ public final class RecipeManager implements Listener {
         if (templateStr == null || additionStr == null || baseStr == null)
             return;
 
-        Material template = Material.matchMaterial(templateStr);
-        Material addition = Material.matchMaterial(additionStr);
-        if (template == null || addition == null)
+        Material template = parseMaterial(templateStr);
+        Material addition = parseMaterial(additionStr);
+        if (template == null || addition == null) {
+            plugin.getLogger().warning("Skipping smithing recipe for backpack type " + resultTypeId
+                    + " because Template/Addition material is invalid (Template=" + templateStr + ", Addition="
+                    + additionStr
+                    + "). If you meant the netherite upgrade template, use NETHERITE_UPGRADE_SMITHING_TEMPLATE.");
             return;
+        }
 
         String baseTypeId = resolveBackpackTypeId(baseStr);
-        if (baseTypeId == null)
+        if (baseTypeId == null) {
+            plugin.getLogger().warning(
+                    "Skipping smithing recipe for backpack type " + resultTypeId
+                            + " because Base type is invalid (Base="
+                            + baseStr + "). Expected e.g. `BACKPACK:Diamond` or `Diamond`.");
             return;
+        }
 
         var baseType = plugin.cfg().findType(baseTypeId);
         var resultType = plugin.cfg().findType(resultTypeId);
@@ -188,6 +290,53 @@ public final class RecipeManager implements Listener {
 
         smithingUpgrades.put(resultType.id().toLowerCase(Locale.ROOT),
                 new SmithingUpgrade(baseType.id(), resultType.id(), template, addition));
+
+        // Register a real smithing recipe so the client will accept the backpack
+        // (player head) in the smithing base slot. We still validate the PDC in
+        // PrepareSmithingEvent so only true ModularPacks backpacks work.
+        registerBackpackSmithingTransformRecipe(baseType, resultType, template, addition);
+    }
+
+    private void registerBackpackSmithingTransformRecipe(
+            BackpackTypeDef baseType,
+            BackpackTypeDef resultType,
+            Material template,
+            Material addition) {
+        if (baseType == null || resultType == null || template == null || addition == null)
+            return;
+
+        NamespacedKey key = new NamespacedKey(plugin, "backpack_smith_" + sanitize(resultType.id()));
+
+        ItemStack preview = new ItemStack(resultType.outputMaterial());
+        ItemMeta meta = preview.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Text.c(resultType.displayName()));
+            preview.setItemMeta(meta);
+        }
+
+        RecipeChoice templateChoice = new RecipeChoice.MaterialChoice(template);
+        RecipeChoice baseChoice = new RecipeChoice.MaterialChoice(baseType.outputMaterial());
+        RecipeChoice additionChoice = new RecipeChoice.MaterialChoice(addition);
+
+        try {
+            SmithingTransformRecipe smith = new SmithingTransformRecipe(key, preview, templateChoice, baseChoice,
+                    additionChoice);
+            if (Bukkit.addRecipe(smith)) {
+                registeredKeys.add(key);
+                // plugin.getLogger()
+                // .info("Registered smithing recipe " + key + " (Template=" + template + ",
+                // Base="
+                // + baseType.outputMaterial() + ", Addition=" + addition + ", Result="
+                // + resultType.outputMaterial() + ")");
+            } else {
+                plugin.getLogger().warning("Failed to register smithing recipe: " + key);
+            }
+        } catch (Throwable t) {
+            plugin.getLogger().log(Level.WARNING,
+                    "Failed to register smithing recipe " + key
+                            + "; client may refuse to accept backpacks in smithing table base slot.",
+                    t);
+        }
     }
 
     private void registerUpgradeCraftingRecipe(String upgradeId, ConfigurationSection upgradeSec) {
@@ -220,23 +369,42 @@ public final class RecipeManager implements Listener {
         ShapedRecipe shaped = new ShapedRecipe(key, preview);
         shaped.shape(pattern.toArray(new String[0]));
 
+        Map<Character, Integer> symbolCounts = countSymbols(pattern);
+        List<SpecialRequirement> requirements = new java.util.ArrayList<>();
+
         ConfigurationSection ing = recipe.getConfigurationSection("Ingredients");
         if (ing != null) {
             for (String k : ing.getKeys(false)) {
                 if (k == null || k.length() != 1)
                     continue;
                 char symbol = k.charAt(0);
-                String matName = ing.getString(k);
-                Material m = Material.matchMaterial(matName == null ? "" : matName);
-                if (m != null) {
+                String raw = ing.getString(k);
+                ParsedIngredient parsed = parseIngredient(raw);
+
+                if (parsed.kind == IngredientKind.MATERIAL) {
+                    if (parsed.material != null)
+                        shaped.setIngredient(symbol, parsed.material);
+                    continue;
+                }
+
+                int requiredCount = symbolCounts.getOrDefault(symbol, 0);
+                if (requiredCount <= 0)
+                    continue;
+
+                if (parsed.kind == IngredientKind.BACKPACK_TYPE) {
+                    shaped.setIngredient(symbol, Material.PLAYER_HEAD);
+                    requirements.add(new SpecialRequirement(SpecialKind.BACKPACK_TYPE, parsed.id, requiredCount));
+                } else if (parsed.kind == IngredientKind.MODULE_TYPE) {
+                    Material m = parsed.material != null ? parsed.material : Material.PAPER;
                     shaped.setIngredient(symbol, m);
+                    requirements.add(new SpecialRequirement(SpecialKind.MODULE_TYPE, parsed.id, requiredCount));
                 }
             }
         }
 
         if (Bukkit.addRecipe(shaped)) {
             registeredKeys.add(key);
-            dynamic.put(key, new DynamicRecipe(DynamicKind.UPGRADE, upgradeId));
+            dynamic.put(key, new DynamicRecipe(DynamicKind.UPGRADE, upgradeId, requirements));
         }
     }
 
@@ -250,6 +418,12 @@ public final class RecipeManager implements Listener {
         DynamicRecipe dyn = dynamic.get(key);
         if (dyn == null)
             return;
+
+        ItemStack[] matrix = e.getInventory() != null ? e.getInventory().getMatrix() : null;
+        if (!validateDynamicIngredients(recipe, matrix)) {
+            e.getInventory().setResult(null);
+            return;
+        }
 
         // Keep result stable/preview-only here; real UUID output is created in
         // CraftItemEvent.
@@ -297,35 +471,20 @@ public final class RecipeManager implements Listener {
         if (!(e.getWhoClicked() instanceof Player player))
             return;
 
+        if (!validateDynamicIngredients(recipe, e.getInventory() != null ? e.getInventory().getMatrix() : null)) {
+            e.setCancelled(true);
+            Bukkit.getScheduler().runTask(plugin, player::updateInventory);
+            return;
+        }
+
         if (e.isShiftClick()) {
             e.setCancelled(true);
             player.sendMessage(Text.c("&cCraft one at a time for modularpacks items."));
             return;
         }
 
-        ItemStack result = switch (dyn.kind) {
-            case BACKPACK -> backpackItems.create(dyn.id);
-            case UPGRADE -> upgradeItems.create(dyn.id);
-        };
-
+        ItemStack result = createCraftResult(player, recipe);
         e.setCurrentItem(result);
-
-        if (dyn.kind == DynamicKind.BACKPACK && result.hasItemMeta()) {
-            ItemMeta meta = result.getItemMeta();
-            if (meta != null) {
-                String idStr = meta.getPersistentDataContainer().get(plugin.keys().BACKPACK_ID,
-                        PersistentDataType.STRING);
-                String typeId = meta.getPersistentDataContainer().get(plugin.keys().BACKPACK_TYPE,
-                        PersistentDataType.STRING);
-                if (idStr != null && typeId != null) {
-                    UUIDUtils.Parsed parsed = UUIDUtils.tryParse(idStr);
-                    if (parsed != null) {
-                        plugin.repo().ensureBackpackExists(parsed.uuid(), typeId, player.getUniqueId(),
-                                player.getName());
-                    }
-                }
-            }
-        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -441,15 +600,58 @@ public final class RecipeManager implements Listener {
         return s.replaceAll("[^a-z0-9_\\-]", "_");
     }
 
+    private static Material parseMaterial(String name) {
+        if (name == null)
+            return null;
+        String s = name.trim();
+        if (s.isEmpty())
+            return null;
+        if (s.regionMatches(true, 0, "minecraft:", 0, "minecraft:".length())) {
+            s = s.substring("minecraft:".length());
+        }
+        s = s.trim().replace(' ', '_').toUpperCase(Locale.ROOT);
+        return Material.getMaterial(s);
+    }
+
+    private void ensureOwnedBackpackRow(Player owner, ItemStack backpackItem) {
+        if (owner == null || backpackItem == null || !backpackItem.hasItemMeta())
+            return;
+        ItemMeta meta = backpackItem.getItemMeta();
+        if (meta == null)
+            return;
+        Keys keys = plugin.keys();
+        var pdc = meta.getPersistentDataContainer();
+        String idStr = pdc.get(keys.BACKPACK_ID, PersistentDataType.STRING);
+        String typeId = pdc.get(keys.BACKPACK_TYPE, PersistentDataType.STRING);
+        if (idStr == null || typeId == null)
+            return;
+        UUIDUtils.Parsed parsed = UUIDUtils.tryParse(idStr);
+        if (parsed == null)
+            return;
+        plugin.repo().ensureBackpackExists(parsed.uuid(), typeId, owner.getUniqueId(), owner.getName());
+    }
+
     private String resolveBackpackTypeId(String baseStr) {
         if (baseStr == null || baseStr.isBlank())
             return null;
+
+        // Special token format used in config: BACKPACK:<TypeId>
+        String token = baseStr.trim();
+        if (token.regionMatches(true, 0, "BACKPACK:", 0, "BACKPACK:".length())) {
+            token = token.substring("BACKPACK:".length()).trim();
+            if (token.isEmpty())
+                return null;
+        }
+
+        var directToken = plugin.cfg().findType(token);
+        if (directToken != null)
+            return directToken.id();
 
         var direct = plugin.cfg().findType(baseStr);
         if (direct != null)
             return direct.id();
 
-        String s = baseStr.trim();
+        String s = token;
         s = s.replace(' ', '_');
         String lower = s.toLowerCase(Locale.ROOT);
         if (lower.endsWith("_backpack")) {
@@ -469,12 +671,118 @@ public final class RecipeManager implements Listener {
         return null;
     }
 
+    private enum IngredientKind {
+        MATERIAL,
+        BACKPACK_TYPE,
+        MODULE_TYPE
+    }
+
+    private enum SpecialKind {
+        BACKPACK_TYPE,
+        MODULE_TYPE
+    }
+
+    private record SpecialRequirement(SpecialKind kind, String id, int requiredCount) {
+    }
+
+    private record ParsedIngredient(IngredientKind kind, String id, Material material) {
+        static ParsedIngredient material(Material m) {
+            return new ParsedIngredient(IngredientKind.MATERIAL, null, m);
+        }
+
+        static ParsedIngredient backpack(String typeId) {
+            return new ParsedIngredient(IngredientKind.BACKPACK_TYPE, typeId, Material.PLAYER_HEAD);
+        }
+
+        static ParsedIngredient module(String upgradeId, Material mat) {
+            return new ParsedIngredient(IngredientKind.MODULE_TYPE, upgradeId, mat);
+        }
+    }
+
+    private ParsedIngredient parseIngredient(String raw) {
+        if (raw == null || raw.isBlank())
+            return ParsedIngredient.material(null);
+
+        String s = raw.trim();
+
+        // Vanilla material name
+        Material m = parseMaterial(s);
+        if (m != null)
+            return ParsedIngredient.material(m);
+
+        // Special: BACKPACK:<TypeId>
+        if (s.regionMatches(true, 0, "BACKPACK:", 0, "BACKPACK:".length())) {
+            String typeToken = s.substring("BACKPACK:".length()).trim();
+            String typeId = resolveBackpackTypeId(typeToken);
+            if (typeId != null)
+                return ParsedIngredient.backpack(typeId);
+        }
+
+        // Special: MODULE:<UpgradeId>
+        if (s.regionMatches(true, 0, "MODULE:", 0, "MODULE:".length())
+                || s.regionMatches(true, 0, "UPGRADE:", 0, "UPGRADE:".length())) {
+            int idx = s.indexOf(':');
+            String upgradeToken = idx >= 0 ? s.substring(idx + 1).trim() : "";
+            var def = plugin.cfg().findUpgrade(upgradeToken);
+            if (def != null)
+                return ParsedIngredient.module(def.id(), def.material());
+        }
+
+        // Convenience: DIAMOND_BACKPACK, LEATHER_BACKPACK, etc.
+        if (s.toLowerCase(Locale.ROOT).endsWith("_backpack")) {
+            String typeId = resolveBackpackTypeId(s);
+            if (typeId != null)
+                return ParsedIngredient.backpack(typeId);
+        }
+
+        return ParsedIngredient.material(null);
+    }
+
+    private boolean matchesRequirement(ItemStack it, SpecialRequirement req) {
+        if (it == null || it.getType().isAir() || !it.hasItemMeta() || req == null)
+            return false;
+        ItemMeta meta = it.getItemMeta();
+        if (meta == null)
+            return false;
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        Keys keys = plugin.keys();
+
+        if (req.kind == SpecialKind.BACKPACK_TYPE) {
+            String type = pdc.get(keys.BACKPACK_TYPE, PersistentDataType.STRING);
+            return type != null && type.equalsIgnoreCase(req.id);
+        }
+
+        if (req.kind == SpecialKind.MODULE_TYPE) {
+            String type = pdc.get(keys.MODULE_TYPE, PersistentDataType.STRING);
+            return type != null && type.equalsIgnoreCase(req.id);
+        }
+
+        return false;
+    }
+
+    private static Map<Character, Integer> countSymbols(List<String> pattern) {
+        Map<Character, Integer> out = new HashMap<>();
+        if (pattern == null)
+            return out;
+        for (String row : pattern) {
+            if (row == null)
+                continue;
+            for (int i = 0; i < row.length(); i++) {
+                char c = row.charAt(i);
+                if (c == ' ')
+                    continue;
+                out.merge(c, 1, Integer::sum);
+            }
+        }
+        return out;
+    }
+
     private enum DynamicKind {
         BACKPACK,
         UPGRADE
     }
 
-    private record DynamicRecipe(DynamicKind kind, String id) {
+    private record DynamicRecipe(DynamicKind kind, String id, List<SpecialRequirement> requirements) {
     }
 
     private record SmithingUpgrade(String baseTypeId, String resultTypeId, Material template, Material addition) {

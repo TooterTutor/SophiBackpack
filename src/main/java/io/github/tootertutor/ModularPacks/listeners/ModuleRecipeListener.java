@@ -1,6 +1,7 @@
 package io.github.tootertutor.ModularPacks.listeners;
 
 import java.util.Set;
+import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -8,8 +9,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.inventory.InventoryView;
+import org.bukkit.inventory.ItemStack;
 
 import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
 import io.github.tootertutor.ModularPacks.config.ScreenType;
@@ -38,23 +42,34 @@ public final class ModuleRecipeListener implements Listener {
         ScreenType screen = msh.screenType();
 
         if (screen == ScreenType.CRAFTING) {
-            // For the crafting module, any item can be shift-clicked into the matrix.
-            // We must handle it ourselves so we can refresh the result slot (vanilla
-            // shift-click doesn't trigger an update in our custom module GUI).
-            if (ModuleClickHandler.handleShiftClickIntoInputs(plugin, e, player, top, craftingMatrixSlots(), item -> 1,
-                    () -> CraftingModuleLogic.updateResult(player, top))) {
-                return;
+            // Shift-click behavior for WORKBENCH inventories created by plugins is
+            // inconsistent across versions. We implement it ourselves, but MUST do
+            // it using InventoryView raw slots to avoid dupes.
+            if (e.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+                int raw = e.getRawSlot();
+                boolean clickedTop = e.getClickedInventory() != null && e.getClickedInventory().equals(top);
+
+                if (!clickedTop) {
+                    // bottom -> top (player inventory -> crafting matrix)
+                    e.setCancelled(true);
+                    UUID moduleId = msh.moduleId();
+                    Bukkit.getScheduler().runTask(plugin,
+                            () -> shiftFromBottomIntoCraftingMatrix(player, moduleId, raw));
+                    return;
+                }
+
+                // top -> bottom (crafting matrix -> player inventory)
+                if (isCraftingMatrixSlot(raw)) {
+                    e.setCancelled(true);
+                    UUID moduleId = msh.moduleId();
+                    Bukkit.getScheduler().runTask(plugin, () -> shiftFromCraftingMatrixToBottom(player, moduleId, raw));
+                    return;
+                }
             }
 
             // Handle result slot crafting; cancel and apply our own consumption logic.
-            if (CraftingModuleLogic.handleResultClick(e, player))
+            if (CraftingModuleLogic.handleResultClick(plugin.recipes(), e, player))
                 return;
-
-            if (ModuleClickHandler.handleShiftClickOutOfInputs(plugin, e, player, top,
-                    ModuleRecipeListener::isCraftingMatrixSlot,
-                    () -> CraftingModuleLogic.updateResult(player, top))) {
-                return;
-            }
         }
 
         if (screen == ScreenType.STONECUTTER) {
@@ -95,7 +110,7 @@ public final class ModuleRecipeListener implements Listener {
         if (raw >= 0 && raw < top.getSize()) {
             Bukkit.getScheduler().runTask(plugin, () -> {
                 switch (screen) {
-                    case CRAFTING -> CraftingModuleLogic.updateResult(player, top);
+                    case CRAFTING -> CraftingModuleLogic.updateResult(plugin.recipes(), player, top);
                     case STONECUTTER -> StonecutterModuleLogic.updateResult(top);
                     case SMITHING -> SmithingModuleLogic.updateResult(top);
                     default -> {
@@ -136,7 +151,7 @@ public final class ModuleRecipeListener implements Listener {
             if (raw >= 0 && raw < top.getSize()) {
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     switch (screen) {
-                        case CRAFTING -> CraftingModuleLogic.updateResult(player, top);
+                        case CRAFTING -> CraftingModuleLogic.updateResult(plugin.recipes(), player, top);
                         case STONECUTTER -> StonecutterModuleLogic.updateResult(top);
                         case SMITHING -> SmithingModuleLogic.updateResult(top);
                         default -> {
@@ -154,5 +169,60 @@ public final class ModuleRecipeListener implements Listener {
 
     private static boolean isCraftingMatrixSlot(int raw) {
         return raw >= 1 && raw <= 9;
+    }
+
+    private void shiftFromBottomIntoCraftingMatrix(Player player, UUID expectedModuleId, int sourceRawSlot) {
+        if (player == null)
+            return;
+
+        InventoryView view = player.getOpenInventory();
+        var top = view.getTopInventory();
+        if (!(top.getHolder() instanceof ModuleScreenHolder msh))
+            return;
+        if (msh.screenType() != ScreenType.CRAFTING)
+            return;
+        if (expectedModuleId != null && !expectedModuleId.equals(msh.moduleId()))
+            return;
+
+        ItemStack source = view.getItem(sourceRawSlot);
+        if (source == null || source.getType().isAir())
+            return;
+
+        ItemStack moving = source.clone();
+        ItemStack remainder = ModuleClickHandler.insertIntoSlots(top, craftingMatrixSlots(), 1, moving);
+
+        view.setItem(sourceRawSlot,
+                (remainder == null || remainder.getType().isAir() || remainder.getAmount() <= 0) ? null : remainder);
+        CraftingModuleLogic.updateResult(plugin.recipes(), player, top);
+        player.updateInventory();
+    }
+
+    private void shiftFromCraftingMatrixToBottom(Player player, UUID expectedModuleId, int sourceRawSlot) {
+        if (player == null)
+            return;
+
+        InventoryView view = player.getOpenInventory();
+        var top = view.getTopInventory();
+        if (!(top.getHolder() instanceof ModuleScreenHolder msh))
+            return;
+        if (msh.screenType() != ScreenType.CRAFTING)
+            return;
+        if (expectedModuleId != null && !expectedModuleId.equals(msh.moduleId()))
+            return;
+
+        ItemStack moving = view.getItem(sourceRawSlot);
+        if (moving == null || moving.getType().isAir())
+            return;
+
+        var leftovers = player.getInventory().addItem(moving.clone());
+        if (leftovers.isEmpty()) {
+            view.setItem(sourceRawSlot, null);
+        } else {
+            // If partial, keep the remainder in the matrix slot.
+            view.setItem(sourceRawSlot, leftovers.values().iterator().next());
+        }
+
+        CraftingModuleLogic.updateResult(plugin.recipes(), player, top);
+        player.updateInventory();
     }
 }

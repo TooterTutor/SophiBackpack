@@ -104,7 +104,7 @@ public final class ScreenRouter {
 		// Result/output slots are derived; never trust persisted values.
 		if (screenType == ScreenType.CRAFTING) {
 			inv.setItem(0, null);
-			CraftingModuleLogic.updateResult(player, inv);
+			CraftingModuleLogic.updateResult(plugin.recipes(), player, inv);
 		}
 		if (screenType == ScreenType.STONECUTTER) {
 			if (inv.getSize() > 1) {

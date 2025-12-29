@@ -19,6 +19,9 @@ import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.ShapelessRecipe;
 
+import io.github.tootertutor.ModularPacks.recipes.RecipeManager;
+import io.github.tootertutor.ModularPacks.text.Text;
+
 public final class CraftingModuleLogic {
 
     private static final int RESULT_SLOT = 0;
@@ -29,17 +32,22 @@ public final class CraftingModuleLogic {
     }
 
     public static void updateResult(Inventory inv) {
-        updateResult(null, inv);
+        updateResult(null, null, inv);
     }
 
     public static void updateResult(Player player, Inventory inv) {
+        updateResult(null, player, inv);
+    }
+
+    public static void updateResult(RecipeManager recipes, Player player, Inventory inv) {
         if (inv == null || inv.getSize() < MATRIX_FIRST_SLOT + MATRIX_SIZE)
             return;
-        CraftMatch match = findMatch(player, readMatrix(inv));
+        ItemStack[] matrix = readMatrix(inv);
+        CraftMatch match = findMatch(recipes, player, matrix);
         inv.setItem(RESULT_SLOT, match == null ? null : match.result.clone());
     }
 
-    public static boolean handleResultClick(InventoryClickEvent e, Player player) {
+    public static boolean handleResultClick(RecipeManager recipes, InventoryClickEvent e, Player player) {
         Inventory inv = e.getView().getTopInventory();
         if (inv.getSize() < MATRIX_FIRST_SLOT + MATRIX_SIZE)
             return false;
@@ -75,25 +83,32 @@ public final class CraftingModuleLogic {
             return true;
 
         if (shift) {
-            craftShift(player, inv);
+            craftShift(recipes, player, inv);
         } else {
-            craftOnceToCursor(e, player, inv);
+            craftOnceToCursor(recipes, e, player, inv);
         }
 
-        updateResult(player, inv);
+        updateResult(recipes, player, inv);
         player.updateInventory();
         return true;
     }
 
-    private static void craftShift(Player player, Inventory inv) {
+    private static void craftShift(RecipeManager recipes, Player player, Inventory inv) {
         // Recompute per-iteration so shapeless assignment stays correct.
         for (int i = 0; i < 64; i++) {
             ItemStack[] matrix = readMatrix(inv);
-            CraftMatch match = findMatch(player, matrix);
+            CraftMatch match = findMatch(recipes, player, matrix);
             if (match == null)
                 return;
 
-            ItemStack out = match.result.clone();
+            if (recipes != null && recipes.isDynamicRecipe(match.recipe)) {
+                player.sendMessage(Text.c("&cCraft one at a time for modularpacks items."));
+                return;
+            }
+
+            ItemStack out = craftResult(recipes, player, match);
+            if (out == null || out.getType().isAir())
+                return;
             var leftovers = player.getInventory().addItem(out);
             if (!leftovers.isEmpty())
                 return;
@@ -102,14 +117,22 @@ public final class CraftingModuleLogic {
         }
     }
 
-    private static void craftOnceToCursor(InventoryClickEvent e, Player player, Inventory inv) {
+    private static void craftOnceToCursor(RecipeManager recipes, InventoryClickEvent e, Player player, Inventory inv) {
         ItemStack[] matrix = readMatrix(inv);
-        CraftMatch match = findMatch(player, matrix);
+        CraftMatch match = findMatch(recipes, player, matrix);
         if (match == null)
             return;
 
         ItemStack cursor = e.getCursor();
-        ItemStack out = match.result.clone();
+        boolean dynamic = recipes != null && recipes.isDynamicRecipe(match.recipe);
+        if (dynamic && cursor != null && !cursor.getType().isAir()) {
+            // Dynamic UUID-bearing items should not stack.
+            return;
+        }
+
+        ItemStack out = craftResult(recipes, player, match);
+        if (out == null || out.getType().isAir())
+            return;
 
         if (cursor != null && !cursor.getType().isAir()) {
             if (!cursor.isSimilar(out))
@@ -125,6 +148,16 @@ public final class CraftingModuleLogic {
 
         player.setItemOnCursor(cursor);
         applyConsumption(inv, matrix, match.consumePerSlot);
+    }
+
+    private static ItemStack craftResult(RecipeManager recipes, Player player, CraftMatch match) {
+        if (match == null)
+            return null;
+        if (recipes == null || match.recipe == null)
+            return match.result == null ? null : match.result.clone();
+
+        ItemStack out = recipes.createCraftResult(player, match.recipe);
+        return out == null ? null : out.clone();
     }
 
     private static void applyConsumption(Inventory inv, ItemStack[] matrix, int[] consumePerSlot) {
@@ -165,20 +198,22 @@ public final class CraftingModuleLogic {
     }
 
     private static final class CraftMatch {
+        final Recipe recipe;
         final ItemStack result;
         final int[] consumePerSlot;
 
-        CraftMatch(ItemStack result, int[] consumePerSlot) {
+        CraftMatch(Recipe recipe, ItemStack result, int[] consumePerSlot) {
+            this.recipe = recipe;
             this.result = result;
             this.consumePerSlot = consumePerSlot;
         }
     }
 
     private static CraftMatch findMatch(ItemStack[] matrix) {
-        return findMatch(null, matrix);
+        return findMatch(null, null, matrix);
     }
 
-    private static CraftMatch findMatch(Player player, ItemStack[] matrix) {
+    private static CraftMatch findMatch(RecipeManager recipes, Player player, ItemStack[] matrix) {
         if (matrix == null || matrix.length != MATRIX_SIZE)
             return null;
 
@@ -187,6 +222,9 @@ public final class CraftingModuleLogic {
         // ourselves.
         Recipe direct = tryGetCraftingRecipe(player, matrix);
         if (direct != null) {
+            if (recipes != null && recipes.isDynamicRecipe(direct) && !recipes.validateDynamicIngredients(direct, matrix))
+                return null;
+
             ItemStack out = direct.getResult();
             if (out == null || out.getType().isAir())
                 return null;
@@ -199,20 +237,28 @@ public final class CraftingModuleLogic {
                 if (!isEmpty(matrix[i]))
                     consume[i] = 1;
             }
-            return new CraftMatch(out.clone(), consume);
+            return new CraftMatch(direct, out.clone(), consume);
         }
 
         Iterator<Recipe> it = Bukkit.recipeIterator();
         while (it.hasNext()) {
             Recipe r = it.next();
             if (r instanceof ShapedRecipe shaped) {
-                CraftMatch match = matchShaped(shaped, matrix);
-                if (match != null)
+                CraftMatch match = matchShaped(r, shaped, matrix);
+                if (match != null) {
+                    if (recipes != null && recipes.isDynamicRecipe(match.recipe)
+                            && !recipes.validateDynamicIngredients(match.recipe, matrix))
+                        continue;
                     return match;
+                }
             } else if (r instanceof ShapelessRecipe shapeless) {
-                CraftMatch match = matchShapeless(shapeless, matrix);
-                if (match != null)
+                CraftMatch match = matchShapeless(r, shapeless, matrix);
+                if (match != null) {
+                    if (recipes != null && recipes.isDynamicRecipe(match.recipe)
+                            && !recipes.validateDynamicIngredients(match.recipe, matrix))
+                        continue;
                     return match;
+                }
             }
         }
         return null;
@@ -264,8 +310,8 @@ public final class CraftingModuleLogic {
         }
     }
 
-    private static CraftMatch matchShapeless(ShapelessRecipe recipe, ItemStack[] matrix) {
-        List<RecipeChoice> required = recipe.getChoiceList();
+    private static CraftMatch matchShapeless(Recipe recipe, ShapelessRecipe shapeless, ItemStack[] matrix) {
+        List<RecipeChoice> required = shapeless.getChoiceList();
         if (required == null || required.isEmpty())
             return null;
 
@@ -300,15 +346,15 @@ public final class CraftingModuleLogic {
                 return null;
         }
 
-        ItemStack out = recipe.getResult();
+        ItemStack out = shapeless.getResult();
         if (out == null || out.getType().isAir())
             return null;
 
-        return new CraftMatch(out.clone(), consume);
+        return new CraftMatch(recipe, out.clone(), consume);
     }
 
-    private static CraftMatch matchShaped(ShapedRecipe recipe, ItemStack[] matrix) {
-        String[] shape = recipe.getShape();
+    private static CraftMatch matchShaped(Recipe recipe, ShapedRecipe shaped, ItemStack[] matrix) {
+        String[] shape = shaped.getShape();
         if (shape == null || shape.length == 0)
             return null;
 
@@ -320,16 +366,16 @@ public final class CraftingModuleLogic {
         if (shapeWidth <= 0)
             return null;
 
-        Map<Character, RecipeChoice> choices = recipe.getChoiceMap();
+        Map<Character, RecipeChoice> choices = shaped.getChoiceMap();
 
         for (int offY = 0; offY <= 3 - shapeHeight; offY++) {
             for (int offX = 0; offX <= 3 - shapeWidth; offX++) {
                 int[] consume = new int[MATRIX_SIZE];
                 if (matchesAtOffset(matrix, shape, shapeWidth, shapeHeight, choices, offX, offY, consume)) {
-                    ItemStack out = recipe.getResult();
+                    ItemStack out = shaped.getResult();
                     if (out == null || out.getType().isAir())
                         return null;
-                    return new CraftMatch(out.clone(), consume);
+                    return new CraftMatch(recipe, out.clone(), consume);
                 }
             }
         }

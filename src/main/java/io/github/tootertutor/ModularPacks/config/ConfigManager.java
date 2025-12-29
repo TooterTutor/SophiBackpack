@@ -113,8 +113,21 @@ public final class ConfigManager {
     private static Material mat(String name, Material fallback) {
         if (name == null)
             return fallback;
-        Material m = Material.matchMaterial(name);
+        Material m = parseMaterial(name);
         return m != null ? m : fallback;
+    }
+
+    private static Material parseMaterial(String name) {
+        if (name == null)
+            return null;
+        String s = name.trim();
+        if (s.isEmpty())
+            return null;
+        if (s.regionMatches(true, 0, "minecraft:", 0, "minecraft:".length())) {
+            s = s.substring("minecraft:".length());
+        }
+        s = s.trim().replace(' ', '_').toUpperCase(Locale.ROOT);
+        return Material.getMaterial(s);
     }
 
     public BackpackTypeDef getType(String input) {
