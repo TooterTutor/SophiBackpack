@@ -79,6 +79,9 @@ public final class Placeholders {
         if (def.id() != null && def.id().equalsIgnoreCase("Tank")) {
             return langActionsTank(plugin);
         }
+        if (def.id() != null && def.id().equalsIgnoreCase("Feeding")) {
+            return langActionsFeeding(plugin);
+        }
         if (def.secondaryAction()) {
             return langActionsSecondary(plugin);
         }
@@ -86,6 +89,15 @@ public final class Placeholders {
             return langActionsPassive(plugin);
         }
         return langActionsPrimary(plugin);
+    }
+
+    private static List<String> langActionsFeeding(ModularPacksPlugin plugin) {
+        if (plugin == null || plugin.lang() == null)
+            return List.of();
+        List<String> feeding = plugin.lang().getList("moduleActionsFeeding");
+        if (!feeding.isEmpty())
+            return feeding;
+        return langActionsSecondary(plugin);
     }
 
     private static List<String> langActionsPrimary(ModularPacksPlugin plugin) {

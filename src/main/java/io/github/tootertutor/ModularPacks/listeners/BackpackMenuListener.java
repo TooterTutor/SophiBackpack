@@ -656,6 +656,25 @@ public final class BackpackMenuListener implements Listener {
         }
 
         // -----------------------------------------
+        // SECONDARY ACTION (Feeding: cycle behavior settings)
+        // -----------------------------------------
+        if (click == ClickType.RIGHT && isFeedingModule(clicked)) {
+            String type = getModuleType(clicked);
+            var def = plugin.cfg().findUpgrade(type);
+            if (def == null || !def.secondaryAction())
+                return;
+
+            if (cycleFeedingSettings(clicked)) {
+                refreshModuleVisuals(holder, clicked);
+                updateModuleSnapshot(holder, clicked);
+                scheduleSave(player, holder);
+                renderer.render(holder);
+                player.sendMessage(Text.c("&7Feeding: &f" + formatFeedingSettings(clicked)));
+            }
+            return;
+        }
+
+        // -----------------------------------------
         // OPEN MODULE UI
         // -----------------------------------------
         if (click == ClickType.LEFT) {
@@ -678,6 +697,157 @@ public final class BackpackMenuListener implements Listener {
     private boolean isTankModule(ItemStack moduleItem) {
         String type = getModuleType(moduleItem);
         return type != null && type.equalsIgnoreCase("Tank");
+    }
+
+    private boolean isFeedingModule(ItemStack moduleItem) {
+        String type = getModuleType(moduleItem);
+        return type != null && type.equalsIgnoreCase("Feeding");
+    }
+
+    private boolean cycleFeedingSettings(ItemStack moduleItem) {
+        if (moduleItem == null || !moduleItem.hasItemMeta())
+            return false;
+
+        ItemMeta meta = moduleItem.getItemMeta();
+        if (meta == null)
+            return false;
+
+        Keys keys = plugin.keys();
+        var pdc = meta.getPersistentDataContainer();
+
+        FeedingSelectionMode mode = FeedingSelectionMode.fromString(
+                pdc.get(keys.MODULE_FEEDING_SELECTION_MODE, PersistentDataType.STRING),
+                plugin.getConfig().getString("Upgrades.Feeding.SelectionMode", "BestCandidate"));
+        FeedingPreference pref = FeedingPreference.fromString(
+                pdc.get(keys.MODULE_FEEDING_PREFERENCE, PersistentDataType.STRING),
+                plugin.getConfig().getString("Upgrades.Feeding.Preference", "Nutrition"));
+
+        FeedingSettings next = FeedingSettings.next(mode, pref);
+
+        pdc.set(keys.MODULE_FEEDING_SELECTION_MODE, PersistentDataType.STRING, next.mode().name());
+        pdc.set(keys.MODULE_FEEDING_PREFERENCE, PersistentDataType.STRING, next.preference().name());
+
+        moduleItem.setItemMeta(meta);
+        return true;
+    }
+
+    private String formatFeedingSettings(ItemStack moduleItem) {
+        if (moduleItem == null || !moduleItem.hasItemMeta())
+            return "Best Candidate / Prefer Nutrition";
+
+        ItemMeta meta = moduleItem.getItemMeta();
+        if (meta == null)
+            return "Best Candidate / Prefer Nutrition";
+
+        Keys keys = plugin.keys();
+        var pdc = meta.getPersistentDataContainer();
+
+        FeedingSelectionMode mode = FeedingSelectionMode.fromString(
+                pdc.get(keys.MODULE_FEEDING_SELECTION_MODE, PersistentDataType.STRING),
+                plugin.getConfig().getString("Upgrades.Feeding.SelectionMode", "BestCandidate"));
+        FeedingPreference pref = FeedingPreference.fromString(
+                pdc.get(keys.MODULE_FEEDING_PREFERENCE, PersistentDataType.STRING),
+                plugin.getConfig().getString("Upgrades.Feeding.Preference", "Nutrition"));
+
+        return mode.displayName() + " / " + pref.displayName();
+    }
+
+    private enum FeedingSelectionMode {
+        BEST_CANDIDATE("Best Candidate"),
+        WHITELIST_ORDER("Prefer First in Whitelist");
+
+        private final String displayName;
+
+        FeedingSelectionMode(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String displayName() {
+            return displayName;
+        }
+
+        static FeedingSelectionMode fromString(String raw, String fallbackRaw) {
+            FeedingSelectionMode parsed = parse(raw);
+            if (parsed != null)
+                return parsed;
+            parsed = parse(fallbackRaw);
+            if (parsed != null)
+                return parsed;
+            return BEST_CANDIDATE;
+        }
+
+        private static FeedingSelectionMode parse(String raw) {
+            if (raw == null)
+                return null;
+            String s = raw.trim().toUpperCase(java.util.Locale.ROOT);
+            if (s.isEmpty())
+                return null;
+            return switch (s) {
+                case "BEST", "BESTCANDIDATE", "BEST_CANDIDATE" -> BEST_CANDIDATE;
+                case "WHITELIST", "WHITELISTORDER", "WHITELIST_ORDER", "PREFER_FIRST_IN_WHITELIST" -> WHITELIST_ORDER;
+                default -> null;
+            };
+        }
+    }
+
+    private enum FeedingPreference {
+        NUTRITION("Prefer Nutrition"),
+        EFFECTS("Prefer Effects");
+
+        private final String displayName;
+
+        FeedingPreference(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String displayName() {
+            return displayName;
+        }
+
+        static FeedingPreference fromString(String raw, String fallbackRaw) {
+            FeedingPreference parsed = parse(raw);
+            if (parsed != null)
+                return parsed;
+            parsed = parse(fallbackRaw);
+            if (parsed != null)
+                return parsed;
+            return NUTRITION;
+        }
+
+        private static FeedingPreference parse(String raw) {
+            if (raw == null)
+                return null;
+            String s = raw.trim().toUpperCase(java.util.Locale.ROOT);
+            if (s.isEmpty())
+                return null;
+            return switch (s) {
+                case "NUTRITION" -> NUTRITION;
+                case "EFFECT", "EFFECTS" -> EFFECTS;
+                default -> null;
+            };
+        }
+    }
+
+    private record FeedingSettings(FeedingSelectionMode mode, FeedingPreference preference) {
+        static FeedingSettings next(FeedingSelectionMode mode, FeedingPreference pref) {
+            if (mode == null)
+                mode = FeedingSelectionMode.BEST_CANDIDATE;
+            if (pref == null)
+                pref = FeedingPreference.NUTRITION;
+
+            // Cycle order:
+            // BestCandidate+Nutrition -> BestCandidate+Effects -> WhitelistOrder+Nutrition -> WhitelistOrder+Effects -> ...
+            if (mode == FeedingSelectionMode.BEST_CANDIDATE && pref == FeedingPreference.NUTRITION) {
+                return new FeedingSettings(FeedingSelectionMode.BEST_CANDIDATE, FeedingPreference.EFFECTS);
+            }
+            if (mode == FeedingSelectionMode.BEST_CANDIDATE && pref == FeedingPreference.EFFECTS) {
+                return new FeedingSettings(FeedingSelectionMode.WHITELIST_ORDER, FeedingPreference.NUTRITION);
+            }
+            if (mode == FeedingSelectionMode.WHITELIST_ORDER && pref == FeedingPreference.NUTRITION) {
+                return new FeedingSettings(FeedingSelectionMode.WHITELIST_ORDER, FeedingPreference.EFFECTS);
+            }
+            return new FeedingSettings(FeedingSelectionMode.BEST_CANDIDATE, FeedingPreference.NUTRITION);
+        }
     }
 
     private boolean handleTankCursorClick(Player player, BackpackMenuHolder holder, ItemStack moduleItem, ItemStack cursor) {

@@ -18,7 +18,7 @@ import io.github.tootertutor.ModularPacks.gui.ModuleScreenHolder;
 
 /**
  * Implements "ghost item" whitelist config for modules backed by DROPPER/HOPPER
- * screens (Feeding/Magnetic/Void).
+ * screens (Feeding/Void).
  */
 public final class ModuleFilterScreenListener implements Listener {
 
@@ -106,4 +106,3 @@ public final class ModuleFilterScreenListener implements Listener {
         }
     }
 }
-

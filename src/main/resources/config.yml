@@ -126,7 +126,7 @@ BackpackTypes:
 # Attributes are extra data attached to the upgrade that define what it can do. Below is the current list of attributes one can assign.
 # Active: must be activated to work. Passive: always works unless toggled toggled.
 # Voidproof: immune to falling into the void. Despawnproof: immune to despawning.
-# Fireproof: immune to burning in lava/fires. Magnetic: Attracts items.
+# Fireproof: immune to burning in lava/fires. Magnet: Attracts items.
 # FluidTank: allows fluids to be stored in module.
 # ExperienceTank: allows experience to be stored in module.
 
@@ -215,10 +215,15 @@ Upgrades:
   Feeding:
     Enabled: true
     Toggleable: true
+    SecondaryAction: true
     ScreenType: Dropper
     # Feeding behavior tuning
     MinFoodLevel: 18
     CooldownTicks: 20
+    # SelectionMode: BestCandidate or WhitelistOrder
+    SelectionMode: BestCandidate
+    # Preference: Nutrition or Effects (harmful foods last)
+    Preference: Nutrition
     # Debug feeding math/selection in console
     Debug: false
     CraftingRecipe:

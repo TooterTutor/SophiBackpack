@@ -15,6 +15,8 @@ public final class Keys {
     public final NamespacedKey MODULE_FILTER_MODE;
     public final NamespacedKey MODULE_FILTER_LIST;
     public final NamespacedKey MODULE_STATE_B64;
+    public final NamespacedKey MODULE_FEEDING_SELECTION_MODE; // string enum
+    public final NamespacedKey MODULE_FEEDING_PREFERENCE; // string enum
 
     public Keys(JavaPlugin plugin) {
         BACKPACK_ID = new NamespacedKey(plugin, "backpack_id");
@@ -27,6 +29,8 @@ public final class Keys {
         MODULE_FILTER_MODE = new NamespacedKey(plugin, "module_filter_mode");
         MODULE_FILTER_LIST = new NamespacedKey(plugin, "module_filter_list");
         MODULE_STATE_B64 = new NamespacedKey(plugin, "module_state_b64");
+        MODULE_FEEDING_SELECTION_MODE = new NamespacedKey(plugin, "module_feeding_selection_mode");
+        MODULE_FEEDING_PREFERENCE = new NamespacedKey(plugin, "module_feeding_preference");
 
     }
 

@@ -14,6 +14,12 @@ moduleActionsSecondary:
   - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
   - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
 
+moduleActionsFeeding:
+  - "&8[&6ʟ-ᴄʟɪᴄᴋ&8]&7 Edit whitelist."
+  - "&8[&6ʀ-ᴄʟɪᴄᴋ&8]&7 Cycle feeding mode."
+  - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
+  - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
+
 moduleActionsTank:
   - "&8[&6ʟ-ᴄʟɪᴄᴋ&8]&7 Activate (+1 level)."
   - "&8[&6ʀ-ᴄʟɪᴄᴋ&8]&7 Action (-1 level / toggle EXP mode when empty)."
@@ -22,7 +28,6 @@ moduleActionsTank:
 
 moduleActionsPassive:
   - "&8[&6ᴘᴀꜱꜱɪᴠᴇ&8]&7 Always active."
-  - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
   - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
 
 toggleState:
