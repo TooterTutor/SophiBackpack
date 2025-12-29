@@ -77,11 +77,14 @@ public final class ModuleFilterScreenListener implements Listener {
                 return;
             }
 
+            ItemStack ghost = cursor.clone();
+            ghost.setAmount(1);
+
             // Toggle off if already set to the same material
-            if (!currentEmpty && current.getType() == mat) {
+            if (!currentEmpty && current.isSimilar(ghost)) {
                 top.setItem(raw, null);
             } else {
-                top.setItem(raw, new ItemStack(mat, 1));
+                top.setItem(raw, ghost);
             }
 
             player.updateInventory();
