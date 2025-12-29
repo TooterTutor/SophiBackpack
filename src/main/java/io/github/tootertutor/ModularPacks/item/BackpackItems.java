@@ -37,6 +37,25 @@ public final class BackpackItems {
         return item;
     }
 
+    public ItemStack createExisting(UUID id, String typeId) {
+        if (id == null)
+            throw new IllegalArgumentException("id cannot be null");
+
+        BackpackTypeDef type = plugin.cfg().findType(typeId);
+        if (type == null)
+            throw new IllegalArgumentException("Unknown backpack type: " + typeId);
+
+        ItemStack item = new ItemStack(type.outputMaterial());
+        ItemMeta meta = item.getItemMeta();
+
+        meta.displayName(Text.c(type.displayName()));
+        meta.getPersistentDataContainer().set(plugin.keys().BACKPACK_ID, PersistentDataType.STRING, id.toString());
+        meta.getPersistentDataContainer().set(plugin.keys().BACKPACK_TYPE, PersistentDataType.STRING, type.id());
+
+        item.setItemMeta(meta);
+        return item;
+    }
+
     public boolean isBackpack(ItemStack item) {
         if (item == null || !item.hasItemMeta())
             return false;

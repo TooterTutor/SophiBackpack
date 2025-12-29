@@ -8,6 +8,7 @@ import io.github.tootertutor.ModularPacks.commands.CommandRouter;
 import io.github.tootertutor.ModularPacks.commands.sub.GiveSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.ListSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.OpenSubcommand;
+import io.github.tootertutor.ModularPacks.commands.sub.RecoverSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.ReloadSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.SetTypeSubcommand;
 import io.github.tootertutor.ModularPacks.config.ConfigManager;
@@ -84,6 +85,7 @@ public final class ModularPacksPlugin extends JavaPlugin {
         router.register(new GiveSubcommand(this));
         router.register(new ListSubcommand(this));
         router.register(new OpenSubcommand(this));
+        router.register(new RecoverSubcommand(this));
         router.register(new ReloadSubcommand(this));
         router.register(new SetTypeSubcommand(this));
         getCommand("backpack").setExecutor(router);
