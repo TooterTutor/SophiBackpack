@@ -118,6 +118,36 @@ public final class BackpackMenuListener implements Listener {
             return;
         }
 
+        // Respect container rules (AllowShulkerBoxes / AllowBundles).
+        // Only block inserting disallowed items into the backpack; allow removing them
+        // (in case config changed after items were stored previously).
+        if (clickedTop && rawSlot >= 0 && rawSlot < visibleStorage) {
+            InventoryAction action = e.getAction();
+            if (action == InventoryAction.PLACE_ALL
+                    || action == InventoryAction.PLACE_ONE
+                    || action == InventoryAction.PLACE_SOME
+                    || action == InventoryAction.SWAP_WITH_CURSOR) {
+                ItemStack cursor = e.getCursor();
+                if (cursor != null && !cursor.getType().isAir() && !plugin.cfg().isAllowedInBackpack(cursor)) {
+                    e.setCancelled(true);
+                    Bukkit.getScheduler().runTask(plugin, player::updateInventory);
+                    return;
+                }
+            }
+
+            if (action == InventoryAction.HOTBAR_SWAP) {
+                int btn = e.getHotbarButton();
+                if (btn >= 0 && btn <= 8) {
+                    ItemStack hotbar = player.getInventory().getItem(btn);
+                    if (hotbar != null && !hotbar.getType().isAir() && !plugin.cfg().isAllowedInBackpack(hotbar)) {
+                        e.setCancelled(true);
+                        Bukkit.getScheduler().runTask(plugin, player::updateInventory);
+                        return;
+                    }
+                }
+            }
+        }
+
         // Sorting mods (ex: Inventory Profiles Next) can spam many click packets in a
         // tiny window (including nav-row spam). If we let any of these through, it can
         // leave items "in-flight" on the cursor and effectively delete them from the
@@ -185,6 +215,10 @@ public final class BackpackMenuListener implements Listener {
             if (moving == null || moving.getType().isAir())
                 return;
             if (isBackpack(moving)) {
+                Bukkit.getScheduler().runTask(plugin, player::updateInventory);
+                return;
+            }
+            if (!plugin.cfg().isAllowedInBackpack(moving)) {
                 Bukkit.getScheduler().runTask(plugin, player::updateInventory);
                 return;
             }
@@ -355,6 +389,17 @@ public final class BackpackMenuListener implements Listener {
         boolean hasNavRow = holder.paginated() || holder.type().upgradeSlots() > 0;
         int visibleStorage = SlotLayout.storageAreaSize(topSize, hasNavRow);
 
+        ItemStack cursor = e.getOldCursor();
+        if (cursor != null && !cursor.getType().isAir() && !plugin.cfg().isAllowedInBackpack(cursor)) {
+            for (int rawSlot : e.getRawSlots()) {
+                if (rawSlot >= 0 && rawSlot < visibleStorage) {
+                    e.setCancelled(true);
+                    Bukkit.getScheduler().runTask(plugin, player::updateInventory);
+                    return;
+                }
+            }
+        }
+
         boolean targetsTop = false;
         for (int rawSlot : e.getRawSlots()) {
             if (rawSlot >= 0 && rawSlot < topSize) {
@@ -451,7 +496,8 @@ public final class BackpackMenuListener implements Listener {
             return false;
         if (btn > 8)
             return false;
-        // Covers ClickType.NUMBER_KEY and actions like HOTBAR_SWAP/HOTBAR_MOVE_AND_READD
+        // Covers ClickType.NUMBER_KEY and actions like
+        // HOTBAR_SWAP/HOTBAR_MOVE_AND_READD
         ItemStack hotbar = player.getInventory().getItem(btn);
         return isBackpack(hotbar);
     }
@@ -907,7 +953,8 @@ public final class BackpackMenuListener implements Listener {
                 pref = FeedingPreference.NUTRITION;
 
             // Cycle order:
-            // BestCandidate+Nutrition -> BestCandidate+Effects -> WhitelistOrder+Nutrition -> WhitelistOrder+Effects -> ...
+            // BestCandidate+Nutrition -> BestCandidate+Effects -> WhitelistOrder+Nutrition
+            // -> WhitelistOrder+Effects -> ...
             if (mode == FeedingSelectionMode.BEST_CANDIDATE && pref == FeedingPreference.NUTRITION) {
                 return new FeedingSettings(FeedingSelectionMode.BEST_CANDIDATE, FeedingPreference.EFFECTS);
             }
@@ -921,7 +968,8 @@ public final class BackpackMenuListener implements Listener {
         }
     }
 
-    private boolean handleTankCursorClick(Player player, BackpackMenuHolder holder, ItemStack moduleItem, ItemStack cursor) {
+    private boolean handleTankCursorClick(Player player, BackpackMenuHolder holder, ItemStack moduleItem,
+            ItemStack cursor) {
         if (player == null || holder == null || moduleItem == null || cursor == null)
             return false;
 
@@ -941,7 +989,8 @@ public final class BackpackMenuListener implements Listener {
         return false;
     }
 
-    private boolean handleTankEmptyCursorClick(Player player, BackpackMenuHolder holder, ItemStack moduleItem, ClickType click) {
+    private boolean handleTankEmptyCursorClick(Player player, BackpackMenuHolder holder, ItemStack moduleItem,
+            ClickType click) {
         if (player == null || holder == null || moduleItem == null || click == null)
             return false;
 
@@ -952,7 +1001,8 @@ public final class BackpackMenuListener implements Listener {
         TankStateCodec.State state = TankStateCodec.decode(readModuleState(holder, moduleId, moduleItem));
 
         if (click == ClickType.RIGHT) {
-            // Toggle EXP mode only if tank is truly empty; otherwise withdraw 1 exp level if in exp mode.
+            // Toggle EXP mode only if tank is truly empty; otherwise withdraw 1 exp level
+            // if in exp mode.
             if (state.fluidBuckets <= 0 && state.expLevels <= 0) {
                 state.expMode = !state.expMode;
                 persistTankState(holder, moduleId, moduleItem, state);
@@ -1033,7 +1083,8 @@ public final class BackpackMenuListener implements Listener {
         if (state.fluidBuckets <= 0)
             return false;
 
-        Material fluidBucket = state.fluidBucketMaterial == null ? null : Material.matchMaterial(state.fluidBucketMaterial);
+        Material fluidBucket = state.fluidBucketMaterial == null ? null
+                : Material.matchMaterial(state.fluidBucketMaterial);
         if (fluidBucket == null || !TankModuleLogic.isSupportedFluidBucket(fluidBucket))
             return false;
 
@@ -1081,7 +1132,8 @@ public final class BackpackMenuListener implements Listener {
         }
     }
 
-    private void persistTankState(BackpackMenuHolder holder, UUID moduleId, ItemStack moduleItem, TankStateCodec.State state) {
+    private void persistTankState(BackpackMenuHolder holder, UUID moduleId, ItemStack moduleItem,
+            TankStateCodec.State state) {
         // Enforce mutual exclusivity
         if (state.expLevels > 0) {
             state.expMode = true;
@@ -1336,6 +1388,8 @@ public final class BackpackMenuListener implements Listener {
 
     private ItemStack insertIntoBackpackLogical(BackpackMenuHolder holder, ItemStack stack) {
         if (stack == null || stack.getType().isAir())
+            return stack;
+        if (!plugin.cfg().isAllowedInBackpack(stack))
             return stack;
 
         ItemStack[] logical = ItemStackCodec.fromBytes(holder.data().contentsBytes());

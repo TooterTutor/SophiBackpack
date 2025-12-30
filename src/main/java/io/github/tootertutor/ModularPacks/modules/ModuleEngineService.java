@@ -745,8 +745,6 @@ public final class ModuleEngineService {
         int maxEntities = Math.max(1,
                 Math.min(256, plugin.getConfig().getInt("Upgrades.Magnet.MaxItemsPerTick", 32)));
 
-        Set<Material> insertBlacklist = plugin.cfg().backpackInsertBlacklist();
-
         boolean changed = false;
         int processed = 0;
 
@@ -766,8 +764,8 @@ public final class ModuleEngineService {
             // Never auto-pickup backpacks/modules (prevents nesting, module loss, etc.)
             if (isProtectedFromVoid(stack))
                 continue;
-            // Admin blacklist: never insert these types via magnet.
-            if (insertBlacklist != null && insertBlacklist.contains(stack.getType()))
+            // Container rules + admin blacklist
+            if (!plugin.cfg().isAllowedInBackpack(stack))
                 continue;
             if (!whitelist.isEmpty() && !whitelist.contains(stack.getType()))
                 continue;

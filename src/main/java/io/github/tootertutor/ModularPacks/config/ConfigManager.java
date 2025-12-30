@@ -12,6 +12,7 @@ import java.util.Set;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.inventory.ItemStack;
 
 import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
 
@@ -28,6 +29,10 @@ public final class ConfigManager {
 
     // Debug
     private boolean debugClickLog = false;
+
+    // Container rules
+    private boolean allowShulkerBoxes = false;
+    private boolean allowBundles = false;
 
     // Item types that cannot be inserted into backpacks (e.g. by Magnet)
     private Set<Material> backpackInsertBlacklist = Set.of();
@@ -51,6 +56,9 @@ public final class ConfigManager {
 
         resizeGui = cfg.getBoolean("modularpacks.ResizeGUI", false);
         debugClickLog = cfg.getBoolean("modularpacks.Debug.ClickLog", false);
+
+        allowShulkerBoxes = cfg.getBoolean("modularpacks.AllowShulkerBoxes", false);
+        allowBundles = cfg.getBoolean("modularpacks.AllowBundles", false);
 
         navPageButtons = mat(cfg.getString("modularpacks.NavPageButtons", "ARROW"), Material.ARROW);
         navBorderFiller = mat(cfg.getString("modularpacks.NavBorderFiller", "GRAY_STAINED_GLASS_PANE"),
@@ -127,8 +135,35 @@ public final class ConfigManager {
         return debugClickLog;
     }
 
+    public boolean allowShulkerBoxes() {
+        return allowShulkerBoxes;
+    }
+
+    public boolean allowBundles() {
+        return allowBundles;
+    }
+
     public Set<Material> backpackInsertBlacklist() {
         return backpackInsertBlacklist;
+    }
+
+    public boolean isAllowedInBackpack(ItemStack stack) {
+        if (stack == null || stack.getType().isAir())
+            return true;
+
+        Material mat = stack.getType();
+
+        // Admin-controlled hard blacklist
+        if (backpackInsertBlacklist != null && backpackInsertBlacklist.contains(mat))
+            return false;
+
+        if (!allowShulkerBoxes && isShulkerBox(mat))
+            return false;
+
+        if (!allowBundles && isBundle(mat))
+            return false;
+
+        return true;
     }
 
     private static Material mat(String name, Material fallback) {
@@ -136,6 +171,17 @@ public final class ConfigManager {
             return fallback;
         Material m = parseMaterial(name);
         return m != null ? m : fallback;
+    }
+
+    private static boolean isShulkerBox(Material mat) {
+        return mat != null && mat.name().endsWith("SHULKER_BOX");
+    }
+
+    private static boolean isBundle(Material mat) {
+        if (mat == null)
+            return false;
+        String name = mat.name();
+        return name.equals("BUNDLE") || name.endsWith("_BUNDLE");
     }
 
     private static Material parseMaterial(String name) {
