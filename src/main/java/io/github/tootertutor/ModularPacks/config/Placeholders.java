@@ -193,6 +193,13 @@ public final class Placeholders {
         // Always register toggleState so non-toggleable modules can safely omit it.
         overrides.put("toggleState", Replacement.scalar(toggleState));
 
+        // Optional module-specific placeholders
+        if (def.id() != null && def.id().equalsIgnoreCase("Jukebox")) {
+            overrides.put("jukeboxMode", Replacement.scalar(resolveJukeboxMode(plugin, moduleItem)));
+        } else {
+            overrides.put("jukeboxMode", Replacement.scalar(""));
+        }
+
         addUpgradeConfigScalars(plugin, def, overrides);
 
         return expandLines(plugin, def, moduleItem, lore, overrides);
@@ -207,6 +214,11 @@ public final class Placeholders {
             overrides.put("moduleActions", Replacement.list(resolveActions(plugin, def)));
             String toggleState = resolveToggleState(plugin, def, moduleItem);
             overrides.put("toggleState", Replacement.scalar(toggleState));
+            if (def.id() != null && def.id().equalsIgnoreCase("Jukebox")) {
+                overrides.put("jukeboxMode", Replacement.scalar(resolveJukeboxMode(plugin, moduleItem)));
+            } else {
+                overrides.put("jukeboxMode", Replacement.scalar(""));
+            }
             addUpgradeConfigScalars(plugin, def, overrides);
         } else {
             overrides.put("moduleActions", Replacement.list(langActionsPrimary(plugin)));
@@ -224,6 +236,9 @@ public final class Placeholders {
         }
         if (def.id() != null && def.id().equalsIgnoreCase("Feeding")) {
             return langActionsFeeding(plugin);
+        }
+        if (def.id() != null && def.id().equalsIgnoreCase("Jukebox")) {
+            return langActionsJukebox(plugin);
         }
         if (def.secondaryAction()) {
             return langActionsSecondary(plugin);
@@ -270,6 +285,15 @@ public final class Placeholders {
         return langActionsSecondary(plugin);
     }
 
+    private static List<String> langActionsJukebox(ModularPacksPlugin plugin) {
+        if (plugin == null || plugin.lang() == null)
+            return List.of();
+        List<String> out = plugin.lang().getList("moduleActionsJukebox");
+        if (!out.isEmpty())
+            return out;
+        return langActionsSecondary(plugin);
+    }
+
     private static List<String> langActionsPassive(ModularPacksPlugin plugin) {
         if (plugin == null || plugin.lang() == null)
             return List.of();
@@ -299,6 +323,26 @@ public final class Placeholders {
             return plugin.lang().get("toggleState.enabled", "&7State: &aᴇɴᴀʙʟᴇᴅ");
         }
         return plugin.lang().get("toggleState.disabled", "&7State: &cᴅɪѕᴀʙʟᴇᴅ");
+    }
+
+    private static String resolveJukeboxMode(ModularPacksPlugin plugin, ItemStack moduleItem) {
+        if (plugin == null || moduleItem == null || !moduleItem.hasItemMeta())
+            return "";
+
+        ItemMeta meta = moduleItem.getItemMeta();
+        if (meta == null)
+            return "";
+
+        Keys keys = plugin.keys();
+        String raw = meta.getPersistentDataContainer().get(keys.MODULE_JUKEBOX_MODE, PersistentDataType.STRING);
+        String s = raw == null ? "" : raw.trim().toUpperCase(java.util.Locale.ROOT);
+
+        return switch (s) {
+            case "SHUFFLE" -> plugin.lang().get("jukeboxMode.shuffle", "&7Mode: &fShuffle");
+            case "REPEAT_ONE" -> plugin.lang().get("jukeboxMode.repeatOne", "&7Mode: &fRepeat 1");
+            case "REPEAT_ALL" -> plugin.lang().get("jukeboxMode.repeatAll", "&7Mode: &fRepeat All");
+            default -> plugin.lang().get("jukeboxMode.repeatAll", "&7Mode: &fRepeat All");
+        };
     }
 
     private static void addUpgradeConfigScalars(ModularPacksPlugin plugin, UpgradeDef def,

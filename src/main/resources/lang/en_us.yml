@@ -26,6 +26,12 @@ moduleActionsTank:
   - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
   - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
 
+moduleActionsJukebox:
+  - "&8[&6ʟ-ᴄʟɪᴄᴋ&8]&7 Edit playlist."
+  - "&8[&6ʀ-ᴄʟɪᴄᴋ&8]&7 Cycle play mode."
+  - "&8[&6ꜱʜɪꜰᴛ + ʟ-ᴄʟɪᴄᴋ&8]&7 Toggle Module."
+  - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
+
 moduleActionsPassive:
   - "&8[&6ᴘᴀꜱꜱɪᴠᴇ&8]&7 Always active."
   - "&8[&6ꜱʜɪꜰᴛ + ʀ-ᴄʟɪᴄᴋ&8]&7 Remove Module."
@@ -33,6 +39,11 @@ moduleActionsPassive:
 toggleState:
   enabled: "&7State: &aᴇɴᴀʙʟᴇᴅ"
   disabled: "&7State: &cᴅɪѕᴀʙʟᴇᴅ"
+
+jukeboxMode:
+  shuffle: "&7Mode: &fShuffle"
+  repeatOne: "&7Mode: &fRepeat One"
+  repeatAll: "&7Mode: &fRepeat All"
 
 magnetRange:
   - "&7Range: &f{Range} &7blocks"

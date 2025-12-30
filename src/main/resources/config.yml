@@ -518,6 +518,14 @@ Upgrades:
     Toggleable: true
     SecondaryAction: true
     ScreenType: Dropper
+    # Playback config:
+    # - Mode: Shuffle | RepeatOne | RepeatAll
+    # - TrackDurationTicks: Approximate duration before advancing (vanilla disc lengths vary)
+    Mode: RepeatAll
+    TrackDurationTicks: 2400
+    Volume: 1.0
+    Pitch: 1.0
+    HearRadius: 32.0
     CraftingRecipe:
       Type: Crafting
       Pattern:
@@ -535,5 +543,6 @@ Upgrades:
     Lore:
       - "&7A portable Jukebox."
       - "{toggleState}"
+      - "{jukeboxMode}"
       - "{moduleActions}"
     CustomModelData: 2015

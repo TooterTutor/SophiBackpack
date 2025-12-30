@@ -792,6 +792,26 @@ public final class BackpackMenuListener implements Listener {
         }
 
         // -----------------------------------------
+        // SECONDARY ACTION (Jukebox: cycle playback mode)
+        // -----------------------------------------
+        if (click == ClickType.RIGHT && isJukeboxModule(clicked)) {
+            String type = getModuleType(clicked);
+            var def = plugin.cfg().findUpgrade(type);
+            if (def == null || !def.secondaryAction())
+                return;
+
+            if (cycleJukeboxMode(clicked)) {
+                refreshModuleVisuals(holder, clicked);
+                updateModuleSnapshot(holder, clicked);
+                scheduleSave(player, holder);
+                renderer.saveVisibleStorageToData(holder);
+                renderer.render(holder);
+                player.sendMessage(Text.c("&7Jukebox: &f" + formatJukeboxMode(clicked)));
+            }
+            return;
+        }
+
+        // -----------------------------------------
         // OPEN MODULE UI
         // -----------------------------------------
         if (click == ClickType.LEFT) {
@@ -819,6 +839,97 @@ public final class BackpackMenuListener implements Listener {
     private boolean isFeedingModule(ItemStack moduleItem) {
         String type = getModuleType(moduleItem);
         return type != null && type.equalsIgnoreCase("Feeding");
+    }
+
+    private boolean isJukeboxModule(ItemStack moduleItem) {
+        String type = getModuleType(moduleItem);
+        return type != null && type.equalsIgnoreCase("Jukebox");
+    }
+
+    private enum JukeboxMode {
+        SHUFFLE("Shuffle"),
+        REPEAT_ONE("Repeat One"),
+        REPEAT_ALL("Repeat All");
+
+        private final String displayName;
+
+        JukeboxMode(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String displayName() {
+            return displayName;
+        }
+
+        static JukeboxMode fromString(String raw, String fallbackRaw) {
+            JukeboxMode parsed = parse(raw);
+            if (parsed != null)
+                return parsed;
+            parsed = parse(fallbackRaw);
+            if (parsed != null)
+                return parsed;
+            return REPEAT_ALL;
+        }
+
+        private static JukeboxMode parse(String raw) {
+            if (raw == null)
+                return null;
+            String s = raw.trim().toUpperCase(java.util.Locale.ROOT);
+            if (s.isEmpty())
+                return null;
+            return switch (s) {
+                case "SHUFFLE", "RANDOM" -> SHUFFLE;
+                case "REPEAT_ONE", "REPEAT1", "ONE" -> REPEAT_ONE;
+                case "REPEAT_ALL", "REPEATALL", "ALL" -> REPEAT_ALL;
+                default -> null;
+            };
+        }
+
+        public JukeboxMode next() {
+            return switch (this) {
+                case SHUFFLE -> REPEAT_ONE;
+                case REPEAT_ONE -> REPEAT_ALL;
+                case REPEAT_ALL -> SHUFFLE;
+            };
+        }
+    }
+
+    private boolean cycleJukeboxMode(ItemStack moduleItem) {
+        if (moduleItem == null || !moduleItem.hasItemMeta())
+            return false;
+
+        ItemMeta meta = moduleItem.getItemMeta();
+        if (meta == null)
+            return false;
+
+        Keys keys = plugin.keys();
+        var pdc = meta.getPersistentDataContainer();
+
+        JukeboxMode current = JukeboxMode.fromString(
+                pdc.get(keys.MODULE_JUKEBOX_MODE, PersistentDataType.STRING),
+                plugin.getConfig().getString("Upgrades.Jukebox.Mode", "RepeatAll"));
+        JukeboxMode next = current.next();
+
+        pdc.set(keys.MODULE_JUKEBOX_MODE, PersistentDataType.STRING, next.name());
+        moduleItem.setItemMeta(meta);
+        return true;
+    }
+
+    private String formatJukeboxMode(ItemStack moduleItem) {
+        if (moduleItem == null || !moduleItem.hasItemMeta())
+            return JukeboxMode.REPEAT_ALL.displayName();
+
+        ItemMeta meta = moduleItem.getItemMeta();
+        if (meta == null)
+            return JukeboxMode.REPEAT_ALL.displayName();
+
+        Keys keys = plugin.keys();
+        var pdc = meta.getPersistentDataContainer();
+
+        JukeboxMode current = JukeboxMode.fromString(
+                pdc.get(keys.MODULE_JUKEBOX_MODE, PersistentDataType.STRING),
+                plugin.getConfig().getString("Upgrades.Jukebox.Mode", "RepeatAll"));
+        return current.displayName();
     }
 
     private boolean cycleFeedingSettings(ItemStack moduleItem) {
