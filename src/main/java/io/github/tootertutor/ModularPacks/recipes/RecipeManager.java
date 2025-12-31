@@ -577,6 +577,11 @@ public final class RecipeManager implements Listener {
         if (addition == null || addition.getType().isAir())
             return;
 
+        // Only intervene for our backpack smithing (player heads). If we intercept broadly
+        // (Template+Addition only), we break vanilla netherite upgrades in real smithing tables.
+        if (base.getType() != Material.PLAYER_HEAD)
+            return;
+
         // Only intervene if these inputs match one of our smithing upgrades.
         SmithingUpgrade candidate = null;
         for (SmithingUpgrade up : smithingUpgrades.values()) {
