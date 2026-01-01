@@ -32,6 +32,12 @@ public final class UpgradeItems {
         UUID moduleId = UUID.randomUUID();
 
         meta.displayName(Text.c(Placeholders.expandText(plugin, def, item, def.displayName())));
+        if (def.customModelData() > 0) {
+            meta.setCustomModelData(def.customModelData());
+        }
+        if (def.glint()) {
+            meta.setEnchantmentGlintOverride(true);
+        }
 
         // PDC: make it portable + unambiguous (no name-matching hacks)
         meta.getPersistentDataContainer().set(plugin.keys().MODULE_ID, PersistentDataType.STRING, moduleId.toString());

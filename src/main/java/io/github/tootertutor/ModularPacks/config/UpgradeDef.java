@@ -9,6 +9,8 @@ public record UpgradeDef(
                 String displayName,
                 Material material,
                 List<String> lore,
+                int customModelData,
+                boolean glint,
                 boolean enabled,
                 boolean toggleable,
                 boolean secondaryAction,

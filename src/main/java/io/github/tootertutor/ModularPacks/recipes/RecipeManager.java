@@ -429,6 +429,12 @@ public final class RecipeManager implements Listener {
         ItemMeta meta = preview.getItemMeta();
         if (meta != null) {
             meta.displayName(Text.c(Placeholders.expandText(plugin, def, preview, def.displayName())));
+            if (def.customModelData() > 0) {
+                meta.setCustomModelData(def.customModelData());
+            }
+            if (def.glint()) {
+                meta.setEnchantmentGlintOverride(true);
+            }
             preview.setItemMeta(meta);
         }
 
@@ -520,6 +526,12 @@ public final class RecipeManager implements Listener {
                 var meta = it.getItemMeta();
                 if (meta != null) {
                     meta.displayName(Text.c(Placeholders.expandText(plugin, def, it, def.displayName())));
+                    if (def.customModelData() > 0) {
+                        meta.setCustomModelData(def.customModelData());
+                    }
+                    if (def.glint()) {
+                        meta.setEnchantmentGlintOverride(true);
+                    }
                     it.setItemMeta(meta);
                 }
                 yield it;

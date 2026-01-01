@@ -70,7 +70,8 @@ public final class ConfigManager {
                 cfg.getString("modularpacks.LockedUpgradeSlotMaterial", "IRON_BARS"),
                 Material.IRON_BARS);
 
-        // Global insert blacklist (Magnet respects this; other insertion paths may as well)
+        // Global insert blacklist (Magnet respects this; other insertion paths may as
+        // well)
         Set<Material> bl = new HashSet<>();
         for (String raw : cfg.getStringList("modularpacks.BackpackInsertBlacklist")) {
             Material m = parseMaterial(raw);
@@ -116,13 +117,16 @@ public final class ConfigManager {
                 String screenType = s.getString("ScreenType", "NONE");
 
                 String displayName = s.getString("DisplayName", id);
-                String matName = s.getString("CraftingRecipe.OutputMaterial", "PAPER");
+                String matName = s.getString("OutputMaterial", s.getString("CraftingRecipe.OutputMaterial", "PAPER"));
                 Material material = mat(matName, Material.PAPER);
 
                 List<String> lore = s.getStringList("Lore");
+                int customModelData = s.getInt("CustomModelData", 0);
+                boolean glint = s.getBoolean("Glint", s.getBoolean("CraftingRecipe.Glint", false));
 
-                upgrades.put(id.toLowerCase(Locale.ROOT), new UpgradeDef(id, displayName, material, lore, enabled,
-                        toggleable, secondaryAction, ScreenType.from(screenType)));
+                upgrades.put(id.toLowerCase(Locale.ROOT),
+                        new UpgradeDef(id, displayName, material, lore, customModelData, glint, enabled, toggleable,
+                                secondaryAction, ScreenType.from(screenType)));
             }
         }
     }
@@ -203,7 +207,8 @@ public final class ConfigManager {
 
         ConfigurationSection sec = typeSec.getConfigurationSection("CraftingRecipe");
         if (sec != null) {
-            if (sec.contains("Type") || sec.contains("Pattern") || sec.contains("Ingredients") || sec.contains("OutputMaterial")
+            if (sec.contains("Type") || sec.contains("Pattern") || sec.contains("Ingredients")
+                    || sec.contains("OutputMaterial")
                     || sec.contains("DisplayName") || sec.contains("Lore") || sec.contains("CustomModelData")) {
                 return sec;
             }
@@ -221,7 +226,8 @@ public final class ConfigManager {
                 if (direct != null)
                     return direct;
                 if (elem instanceof Map<?, ?> wrapper) {
-                    if (wrapper.containsKey("Type") || wrapper.containsKey("Pattern") || wrapper.containsKey("Ingredients")
+                    if (wrapper.containsKey("Type") || wrapper.containsKey("Pattern")
+                            || wrapper.containsKey("Ingredients")
                             || wrapper.containsKey("OutputMaterial") || wrapper.containsKey("DisplayName")
                             || wrapper.containsKey("Lore") || wrapper.containsKey("CustomModelData")) {
                         ConfigurationSection cs = asSection(wrapper);
