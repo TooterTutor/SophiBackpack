@@ -29,7 +29,6 @@ public final class UpgradeItems {
 
         ItemStack item = new ItemStack(def.material());
         ItemMeta meta = item.getItemMeta();
-        UUID moduleId = UUID.randomUUID();
 
         meta.displayName(Text.c(Placeholders.expandText(plugin, def, item, def.displayName())));
         if (def.customModelData() > 0) {
@@ -40,7 +39,13 @@ public final class UpgradeItems {
         }
 
         // PDC: make it portable + unambiguous (no name-matching hacks)
-        meta.getPersistentDataContainer().set(plugin.keys().MODULE_ID, PersistentDataType.STRING, moduleId.toString());
+        //
+        // CraftingTemplate is intentionally stackable (it's a crafting ingredient, not an installable module),
+        // so it does NOT get a unique MODULE_ID.
+        if (!"CraftingTemplate".equalsIgnoreCase(upgradeId)) {
+            UUID moduleId = UUID.randomUUID();
+            meta.getPersistentDataContainer().set(plugin.keys().MODULE_ID, PersistentDataType.STRING, moduleId.toString());
+        }
         meta.getPersistentDataContainer().set(plugin.keys().MODULE_TYPE, PersistentDataType.STRING, upgradeId);
         meta.getPersistentDataContainer().set(plugin.keys().MODULE_ENABLED, PersistentDataType.BYTE, (byte) 1);
 
