@@ -8,6 +8,7 @@ import io.github.tootertutor.ModularPacks.commands.CommandRouter;
 import io.github.tootertutor.ModularPacks.commands.sub.GiveSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.ListSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.OpenSubcommand;
+import io.github.tootertutor.ModularPacks.commands.sub.RefreshSkullsSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.RecoverSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.ReloadSubcommand;
 import io.github.tootertutor.ModularPacks.commands.sub.SetTypeSubcommand;
@@ -99,6 +100,7 @@ public final class ModularPacksPlugin extends JavaPlugin {
         router.register(new RecoverSubcommand(this));
         router.register(new ReloadSubcommand(this));
         router.register(new SetTypeSubcommand(this));
+        router.register(new RefreshSkullsSubcommand(this));
         getCommand("backpack").setExecutor(router);
         getCommand("backpack").setTabCompleter(router);
 
