@@ -93,13 +93,20 @@ public final class ConfigManager {
                 String displayName = firstString(s, "DisplayName", key);
                 List<String> lore = firstStringList(s, "Lore");
                 int customModelData = firstInt(s, "CustomModelData", 0);
+                String skullData = firstString(s, "SkullData", null);
+                if (skullData != null) {
+                    skullData = skullData.trim();
+                    if (skullData.isEmpty())
+                        skullData = null;
+                }
 
                 Material output = mat(
                         firstString(s, "OutputMaterial", s.getString("CraftingRecipe.OutputMaterial", "PLAYER_HEAD")),
                         Material.PLAYER_HEAD);
 
                 types.put(key.toLowerCase(Locale.ROOT),
-                        new BackpackTypeDef(key, displayName, rows, upgradeSlots, output, lore, customModelData));
+                        new BackpackTypeDef(key, displayName, rows, upgradeSlots, output, lore, customModelData,
+                                skullData));
             }
         }
 

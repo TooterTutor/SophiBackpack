@@ -11,5 +11,6 @@ public record BackpackTypeDef(
 		int upgradeSlots,
 		Material outputMaterial,
 		List<String> lore,
-		int customModelData) {
+		int customModelData,
+		String skullData) {
 }

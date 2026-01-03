@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataType;
 
 import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
@@ -51,6 +52,10 @@ public final class BackpackItems {
             CustomModelDataUtil.setCustomModelData(meta, type.customModelData());
         }
 
+        if (meta instanceof SkullMeta skull && type.skullData() != null) {
+            SkullTextureUtil.applyBase64Texture(skull, type.skullData());
+        }
+
         List<String> lore = type.lore();
         if (lore != null && !lore.isEmpty()) {
             List<String> expanded = Placeholders.expandBackpackLore(plugin, type, id, lore);
@@ -78,6 +83,10 @@ public final class BackpackItems {
             CustomModelDataUtil.setCustomModelData(meta, type.customModelData());
         } else if (meta.hasCustomModelDataComponent()) {
             CustomModelDataUtil.setCustomModelData(meta, null);
+        }
+
+        if (meta instanceof SkullMeta skull && type.skullData() != null) {
+            SkullTextureUtil.applyBase64Texture(skull, type.skullData());
         }
 
         List<String> lore = type.lore();
