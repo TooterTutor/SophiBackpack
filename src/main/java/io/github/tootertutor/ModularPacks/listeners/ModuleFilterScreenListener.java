@@ -22,7 +22,6 @@ import io.github.tootertutor.ModularPacks.data.BackpackData;
 import io.github.tootertutor.ModularPacks.data.ItemStackCodec;
 import io.github.tootertutor.ModularPacks.gui.ModuleScreenHolder;
 import io.github.tootertutor.ModularPacks.item.Keys;
-import io.github.tootertutor.ModularPacks.listeners.ModuleClickHandler;
 
 /**
  * Implements "ghost item" whitelist config for modules backed by DROPPER/HOPPER
@@ -196,7 +195,7 @@ public final class ModuleFilterScreenListener implements Listener {
                 }
             }
 
-            if (action == InventoryAction.HOTBAR_SWAP || action == InventoryAction.HOTBAR_MOVE_AND_READD) {
+            if (action == InventoryAction.HOTBAR_SWAP) {
                 int btn = e.getHotbarButton();
                 if (btn >= 0 && btn <= 8) {
                     ItemStack hotbar = player.getInventory().getItem(btn);
