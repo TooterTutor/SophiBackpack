@@ -460,48 +460,17 @@ public final class BackpackMenuListener implements Listener {
             if (!openHolder.backpackId().equals(holder.backpackId()))
                 return;
 
-            int movedBackpacks = 0;
-            int movedBlocked = 0;
-
-            // Scan logical storage (all pages), not just currently-visible slots.
-            ItemStack[] logical = ItemStackCodec.fromBytes(openHolder.data().contentsBytes());
-            int logicalSize = openHolder.logicalSlots();
-            if (logical.length != logicalSize) {
-                ItemStack[] resized = new ItemStack[logicalSize];
-                System.arraycopy(logical, 0, resized, 0, Math.min(logical.length, logicalSize));
-                logical = resized;
-            }
-
-            for (int i = 0; i < logical.length; i++) {
-                ItemStack it = logical[i];
-                if (it == null || it.getType().isAir())
-                    continue;
-
-                if (isBackpack(it)) {
-                    logical[i] = null;
-                    giveOrDrop(player, it);
-                    movedBackpacks++;
-                    continue;
-                }
-
-                if (!plugin.cfg().isAllowedInBackpack(it)) {
-                    logical[i] = null;
-                    giveOrDrop(player, it);
-                    movedBlocked++;
-                }
-            }
-
-            if (movedBackpacks > 0 || movedBlocked > 0) {
-                openHolder.data().contentsBytes(ItemStackCodec.toBytes(logical));
+            EjectResult moved = ejectProhibitedFromData(player, openHolder);
+            if (moved.backpacks > 0 || moved.blocked > 0) {
                 renderer.render(openHolder);
                 scheduleSave(player, openHolder);
-                if (movedBackpacks > 0) {
-                    player.sendMessage(Text.c("&cBackpacks can't be stored inside backpacks. Moved " + movedBackpacks
+                if (moved.backpacks > 0) {
+                    player.sendMessage(Text.c("&cBackpacks can't be stored inside backpacks. Moved " + moved.backpacks
                             + " backpack(s) back to you."));
                 }
-                if (movedBlocked > 0) {
+                if (moved.blocked > 0) {
                     player.sendMessage(Text.c("&cSome items are blocked from backpacks by server config. Moved "
-                            + movedBlocked + " item(s) back to you."));
+                            + moved.blocked + " item(s) back to you."));
                 }
                 player.updateInventory();
             }
@@ -673,6 +642,20 @@ public final class BackpackMenuListener implements Listener {
             // Save the current state directly from the inventory (still accessible during
             // close event)
             renderer.saveVisibleStorageToData(holder);
+
+            // If a blocked item (shulker, bundle, admin blacklist, etc) somehow made it
+            // into the backpack (version changes, exploits, etc), eject it immediately on
+            // close so it can't remain stuck/hidden in the DB.
+            EjectResult moved = ejectProhibitedFromData(player, holder);
+            if (moved.backpacks > 0) {
+                player.sendMessage(Text.c("&cBackpacks can't be stored inside backpacks. Moved " + moved.backpacks
+                        + " backpack(s) back to you."));
+            }
+            if (moved.blocked > 0) {
+                player.sendMessage(Text.c("&cSome items are blocked from backpacks by server config. Moved "
+                        + moved.blocked + " item(s) back to you."));
+            }
+
             plugin.repo().saveBackpack(holder.data());
             refreshBackpackItemsFor(player, holder);
             plugin.sessions().refreshLinkedBackpacksThrottled(holder.backpackId(), holder.data());
@@ -689,6 +672,52 @@ public final class BackpackMenuListener implements Listener {
             sortBurstNotifiedAtTick.remove(playerId);
         }
 
+    }
+
+    private EjectResult ejectProhibitedFromData(Player player, BackpackMenuHolder holder) {
+        if (player == null || holder == null)
+            return new EjectResult(0, 0);
+
+        int movedBackpacks = 0;
+        int movedBlocked = 0;
+
+        // Scan logical storage (all pages), not just currently-visible slots.
+        ItemStack[] logical = ItemStackCodec.fromBytes(holder.data().contentsBytes());
+        int logicalSize = holder.logicalSlots();
+        if (logical.length != logicalSize) {
+            ItemStack[] resized = new ItemStack[logicalSize];
+            System.arraycopy(logical, 0, resized, 0, Math.min(logical.length, logicalSize));
+            logical = resized;
+        }
+
+        for (int i = 0; i < logical.length; i++) {
+            ItemStack it = logical[i];
+            if (it == null || it.getType().isAir())
+                continue;
+
+            if (isBackpack(it)) {
+                logical[i] = null;
+                giveOrDrop(player, it);
+                movedBackpacks++;
+                continue;
+            }
+
+            if (!plugin.cfg().isAllowedInBackpack(it)) {
+                logical[i] = null;
+                giveOrDrop(player, it);
+                movedBlocked++;
+            }
+        }
+
+        if (movedBackpacks > 0 || movedBlocked > 0) {
+            holder.data().contentsBytes(ItemStackCodec.toBytes(logical));
+            Bukkit.getScheduler().runTask(plugin, player::updateInventory);
+        }
+
+        return new EjectResult(movedBackpacks, movedBlocked);
+    }
+
+    private record EjectResult(int backpacks, int blocked) {
     }
 
     @EventHandler
