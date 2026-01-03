@@ -9,7 +9,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.bukkit.NamespacedKey;
 import org.bukkit.Material;
+import org.bukkit.Registry;
+import org.bukkit.Sound;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.inventory.ItemStack;
@@ -26,6 +29,10 @@ public final class ConfigManager {
     private Material navBorderFiller = Material.GRAY_STAINED_GLASS_PANE;
     private Material unlockedUpgradeSlotMaterial = Material.WHITE_STAINED_GLASS_PANE;
     private Material lockedUpgradeSlotMaterial = Material.IRON_BARS;
+
+    // Backpack sounds
+    private Sound backpackOpenSound = Sound.BLOCK_CHEST_OPEN;
+    private Sound backpackCloseSound = Sound.BLOCK_CHEST_CLOSE;
 
     // Debug
     private boolean debugClickLog = false;
@@ -59,6 +66,11 @@ public final class ConfigManager {
 
         allowShulkerBoxes = cfg.getBoolean("modularpacks.AllowShulkerBoxes", false);
         allowBundles = cfg.getBoolean("modularpacks.AllowBundles", false);
+
+        backpackOpenSound = parseSound(cfg.getString("modularpacks.BackpackOpenSound", "CHEST_OPEN"),
+                Sound.BLOCK_CHEST_OPEN);
+        backpackCloseSound = parseSound(cfg.getString("modularpacks.BackpackCloseSound", "CHEST_CLOSE"),
+                Sound.BLOCK_CHEST_CLOSE);
 
         navPageButtons = mat(cfg.getString("modularpacks.NavPageButtons", "ARROW"), Material.ARROW);
         navBorderFiller = mat(cfg.getString("modularpacks.NavBorderFiller", "GRAY_STAINED_GLASS_PANE"),
@@ -154,6 +166,14 @@ public final class ConfigManager {
         return allowBundles;
     }
 
+    public Sound backpackOpenSound() {
+        return backpackOpenSound;
+    }
+
+    public Sound backpackCloseSound() {
+        return backpackCloseSound;
+    }
+
     public Set<Material> backpackInsertBlacklist() {
         return backpackInsertBlacklist;
     }
@@ -206,6 +226,42 @@ public final class ConfigManager {
         }
         s = s.trim().replace(' ', '_').toUpperCase(Locale.ROOT);
         return Material.getMaterial(s);
+    }
+
+    private static Sound parseSound(String raw, Sound fallback) {
+        if (raw == null)
+            return fallback;
+        String s = raw.trim();
+        if (s.isEmpty())
+            return fallback;
+
+        String upper = s.toUpperCase(Locale.ROOT);
+
+        // Back-compat shorthands
+        if (upper.equals("CHEST_OPEN")) {
+            s = "block.chest.open";
+        } else if (upper.equals("CHEST_CLOSE")) {
+            s = "block.chest.close";
+        }
+
+        NamespacedKey key = null;
+
+        if (s.contains(":")) {
+            key = NamespacedKey.fromString(s);
+        } else if (s.indexOf('.') >= 0) {
+            key = NamespacedKey.minecraft(s.toLowerCase(Locale.ROOT));
+        } else if (upper.matches("[A-Z0-9_]+")) {
+            // Support "BLOCK_CHEST_OPEN" style -> "block.chest.open"
+            key = NamespacedKey.minecraft(upper.toLowerCase(Locale.ROOT).replace('_', '.'));
+        }
+
+        if (key != null) {
+            Sound resolved = Registry.SOUNDS.get(key);
+            if (resolved != null)
+                return resolved;
+        }
+
+        return fallback;
     }
 
     private static ConfigurationSection firstRecipeSection(ConfigurationSection typeSec) {

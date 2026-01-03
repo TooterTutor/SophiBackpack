@@ -447,6 +447,15 @@ public final class BackpackMenuListener implements Listener {
         if (!(e.getView().getTopInventory().getHolder() instanceof BackpackMenuHolder holder))
             return;
 
+        int now = Bukkit.getCurrentTick();
+        int ignoreUntil = ignoreCloseUntilTick.getOrDefault(player.getUniqueId(), -1);
+        if (now > ignoreUntil) {
+            try {
+                player.playSound(player.getLocation(), plugin.cfg().backpackOpenSound(), 1.0f, 1.0f);
+            } catch (Exception ignored) {
+            }
+        }
+
         // If a backpack somehow ended up inside a backpack (hotbar swap, automation,
         // etc), the generic nesting guard will prevent removing it, so proactively
         // eject it now to avoid permanent loss.
@@ -663,6 +672,11 @@ public final class BackpackMenuListener implements Listener {
             plugin.sessions().onRelatedInventoryClose(player, holder.backpackId());
 
             dirtySinceTick.remove(player.getUniqueId());
+
+            try {
+                player.playSound(player.getLocation(), plugin.cfg().backpackCloseSound(), 1.0f, 1.0f);
+            } catch (Exception ignored) {
+            }
 
             // cleanup burst guard tracking for this player
             UUID playerId = player.getUniqueId();
