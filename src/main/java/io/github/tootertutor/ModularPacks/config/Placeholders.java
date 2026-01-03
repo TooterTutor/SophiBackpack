@@ -199,6 +199,11 @@ public final class Placeholders {
         } else {
             overrides.put("jukeboxMode", Replacement.scalar(""));
         }
+        if (def.id() != null && def.id().equalsIgnoreCase("Feeding")) {
+            overrides.put("feedingMode", Replacement.scalar(resolveFeedingMode(plugin, moduleItem)));
+        } else {
+            overrides.put("feedingMode", Replacement.scalar(""));
+        }
 
         addUpgradeConfigScalars(plugin, def, overrides);
 
@@ -218,6 +223,11 @@ public final class Placeholders {
                 overrides.put("jukeboxMode", Replacement.scalar(resolveJukeboxMode(plugin, moduleItem)));
             } else {
                 overrides.put("jukeboxMode", Replacement.scalar(""));
+            }
+            if (def.id() != null && def.id().equalsIgnoreCase("Feeding")) {
+                overrides.put("feedingMode", Replacement.scalar(resolveFeedingMode(plugin, moduleItem)));
+            } else {
+                overrides.put("feedingMode", Replacement.scalar(""));
             }
             addUpgradeConfigScalars(plugin, def, overrides);
         } else {
@@ -343,6 +353,45 @@ public final class Placeholders {
             case "REPEAT_ALL" -> plugin.lang().get("jukeboxMode.repeatAll", "&7Mode: &fRepeat All");
             default -> plugin.lang().get("jukeboxMode.repeatAll", "&7Mode: &fRepeat All");
         };
+    }
+
+    private static String resolveFeedingMode(ModularPacksPlugin plugin, ItemStack moduleItem) {
+        if (plugin == null || moduleItem == null || !moduleItem.hasItemMeta())
+            return "";
+
+        ItemMeta meta = moduleItem.getItemMeta();
+        if (meta == null)
+            return "";
+
+        Keys keys = plugin.keys();
+        var pdc = meta.getPersistentDataContainer();
+
+        String rawMode = pdc.get(keys.MODULE_FEEDING_SELECTION_MODE, PersistentDataType.STRING);
+        String rawPref = pdc.get(keys.MODULE_FEEDING_PREFERENCE, PersistentDataType.STRING);
+
+        if (rawMode == null || rawMode.isBlank()) {
+            rawMode = plugin.getConfig().getString("Upgrades.Feeding.SelectionMode", "BestCandidate");
+        }
+        if (rawPref == null || rawPref.isBlank()) {
+            rawPref = plugin.getConfig().getString("Upgrades.Feeding.Preference", "Nutrition");
+        }
+
+        String mode = rawMode.trim().toUpperCase(java.util.Locale.ROOT);
+        String pref = rawPref.trim().toUpperCase(java.util.Locale.ROOT);
+
+        boolean whitelist = mode.contains("WHITELIST") || mode.contains("PREFER_FIRST");
+        boolean effects = pref.contains("EFFECT");
+
+        if (!whitelist && !effects) {
+            return plugin.lang().get("feedingMode.candidateNutrition", "&7Mode: &fBest Candidate: Prefer Nutrition");
+        }
+        if (!whitelist) {
+            return plugin.lang().get("feedingMode.candidateEffects", "&7Mode: &fBest Candidate: Prefer Effects");
+        }
+        if (!effects) {
+            return plugin.lang().get("feedingMode.whitelistNutrition", "&7Mode: &fFirst in Whitelist: Prefer Nutrition");
+        }
+        return plugin.lang().get("feedingMode.whitelistEffects", "&7Mode: &fFirst in Whitelist: Prefer Effects");
     }
 
     private static void addUpgradeConfigScalars(ModularPacksPlugin plugin, UpgradeDef def,

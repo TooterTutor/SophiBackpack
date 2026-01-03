@@ -21,11 +21,15 @@ import io.github.tootertutor.ModularPacks.listeners.BackpackEverlastingListener;
 import io.github.tootertutor.ModularPacks.listeners.BackpackMenuListener;
 import io.github.tootertutor.ModularPacks.listeners.BackpackUseListener;
 import io.github.tootertutor.ModularPacks.listeners.ClickDebugListener;
+import io.github.tootertutor.ModularPacks.listeners.CraftingModuleListener;
+import io.github.tootertutor.ModularPacks.listeners.FurnaceModuleListener;
 import io.github.tootertutor.ModularPacks.listeners.ModuleRecipeListener;
 import io.github.tootertutor.ModularPacks.listeners.ModuleFilterScreenListener;
 import io.github.tootertutor.ModularPacks.listeners.PreventModulePlacementListener;
 import io.github.tootertutor.ModularPacks.listeners.PreventModuleUseListener;
 import io.github.tootertutor.ModularPacks.listeners.PreventNestingListener;
+import io.github.tootertutor.ModularPacks.listeners.SmithingModuleListener;
+import io.github.tootertutor.ModularPacks.listeners.StonecutterModuleListener;
 import io.github.tootertutor.ModularPacks.modules.ModuleEngineService;
 import io.github.tootertutor.ModularPacks.recipes.RecipeManager;
 
@@ -76,6 +80,10 @@ public final class ModularPacksPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new PreventModuleUseListener(this), this);
         Bukkit.getPluginManager().registerEvents(new BackpackEverlastingListener(this), this);
         Bukkit.getPluginManager().registerEvents(new AnvilModuleListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new FurnaceModuleListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new CraftingModuleListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new SmithingModuleListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new StonecutterModuleListener(this), this);
 
         if (cfg().debugClickLog()) {
             this.clickDebug = new ClickDebugListener(this);

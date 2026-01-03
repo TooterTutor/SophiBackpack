@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -41,37 +42,64 @@ public final class TankModuleLogic {
         return fallback;
     }
 
-    public static void applyVisuals(ModularPacksPlugin plugin, ItemStack moduleItem, byte[] stateBytes) {
+    public static ItemStack applyVisuals(ModularPacksPlugin plugin, ItemStack moduleItem, byte[] stateBytes) {
         if (plugin == null || moduleItem == null)
-            return;
+            return moduleItem;
         TankStateCodec.State s = TankStateCodec.decode(stateBytes);
-        applyVisuals(plugin, moduleItem, s);
+        return applyVisuals(plugin, moduleItem, s);
     }
 
-    public static void applyVisuals(ModularPacksPlugin plugin, ItemStack moduleItem, TankStateCodec.State s) {
+    public static ItemStack applyVisuals(ModularPacksPlugin plugin, ItemStack moduleItem, TankStateCodec.State s) {
         if (plugin == null || moduleItem == null || s == null)
-            return;
+            return moduleItem;
 
         UpgradeDef def = plugin.cfg().findUpgrade("Tank");
         Material fallback = (def != null ? def.material() : Material.BUCKET);
 
         Material icon = iconMaterial(s, fallback);
+        ItemStack out = moduleItem;
         if (icon != null && moduleItem.getType() != icon) {
-            moduleItem.setType(icon);
+            out = copyWithType(moduleItem, icon);
         }
 
-        ItemMeta meta = moduleItem.getItemMeta();
+        ItemMeta meta = out.getItemMeta();
         if (meta == null)
-            return;
+            return out;
 
         if (def != null) {
-            meta.displayName(Text.c(Placeholders.expandText(plugin, def, moduleItem, def.displayName())));
+            meta.displayName(Text.c(Placeholders.expandText(plugin, def, out, def.displayName())));
 
-            List<String> base = Placeholders.expandLore(plugin, def, moduleItem, def.lore());
+            List<String> base = Placeholders.expandLore(plugin, def, out, def.lore());
             meta.lore(Text.lore(expandContainedFluid(plugin, base, s)));
         }
 
-        moduleItem.setItemMeta(meta);
+        out.setItemMeta(meta);
+        return out;
+    }
+
+    private static ItemStack copyWithType(ItemStack original, Material type) {
+        if (original == null || type == null)
+            return original;
+
+        int amount = original.getAmount();
+        if (amount <= 0)
+            amount = 1;
+        amount = Math.min(amount, type.getMaxStackSize());
+
+        ItemMeta meta = original.getItemMeta();
+        if (meta == null)
+            return new ItemStack(type, amount);
+
+        try {
+            ItemStack out = new ItemStack(type, amount);
+            ItemMeta converted = Bukkit.getItemFactory().asMetaFor(meta, type);
+            out.setItemMeta(converted);
+            return out;
+        } catch (IllegalArgumentException ex) {
+            // If a conversion fails for some reason, keep the original stack to avoid
+            // dropping PDC/state (the icon just won't update).
+            return original;
+        }
     }
 
     private static List<String> expandContainedFluid(ModularPacksPlugin plugin, List<String> lore, TankStateCodec.State s) {

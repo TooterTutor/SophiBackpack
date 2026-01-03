@@ -8,12 +8,14 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.MenuType;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 
 import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
 import io.github.tootertutor.ModularPacks.data.BackpackData;
 import io.github.tootertutor.ModularPacks.data.ItemStackCodec;
+import net.kyori.adventure.text.Component;
 
 public final class AnvilModuleLogic {
 
@@ -44,18 +46,21 @@ public final class AnvilModuleLogic {
     /** Open a real vanilla anvil UI and seed slots 0/1 from module state. */
     public static void open(ModularPacksPlugin plugin, Player player,
             UUID backpackId, String backpackType, UUID moduleId) {
+        if (plugin == null || player == null || !player.isOnline())
+            return;
 
-        // Real vanilla anvil UI (no block required when force=true)
-        InventoryView view = player.openAnvil(player.getLocation(), true);
+        // Real vanilla anvil UI (no block required when checkReachable=false)
+        InventoryView view = MenuType.ANVIL.builder()
+                .title(Component.text("Anvil Module"))
+                .location(player.getLocation())
+                .checkReachable(false)
+                .build(player);
         if (view == null)
             return;
 
         Inventory top = view.getTopInventory();
         if (!(top instanceof AnvilInventory anvil) || top.getType() != InventoryType.ANVIL)
             return;
-
-        // Track this as "ours"
-        SESSIONS.put(player.getUniqueId(), new Session(backpackId, backpackType, moduleId));
 
         // Load persisted left/right
         BackpackData data = plugin.repo().loadOrCreate(backpackId, backpackType);
@@ -81,6 +86,12 @@ public final class AnvilModuleLogic {
         // Never seed output; vanilla computes it. Clear any stale output.
         if (anvil.getSize() > 2)
             anvil.setItem(2, null);
+
+        // Actually open the view for the player.
+        player.openInventory(view);
+
+        // Track this as "ours" only after the view was opened.
+        SESSIONS.put(player.getUniqueId(), new Session(backpackId, backpackType, moduleId));
 
         player.updateInventory();
     }

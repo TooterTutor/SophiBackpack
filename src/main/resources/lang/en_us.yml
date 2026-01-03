@@ -45,6 +45,12 @@ jukeboxMode:
   repeatOne: "&7Mode: &fRepeat One"
   repeatAll: "&7Mode: &fRepeat All"
 
+feedingMode:
+  candidateNutrition: "&7Mode: &fBest Candidate: Prefer Nutrition"
+  candidateEffects: "&7Mode: &fBest Candidate: Prefer Effects"
+  whitelistNutrition: "&7Mode: &fFirst in Whitelist: Prefer Nutrition"
+  whitelistEffects: "&7Mode: &fFirst in Whitelist: Prefer Effects"
+
 magnetRange:
   - "&7Range: &f{Range} &7blocks"
 

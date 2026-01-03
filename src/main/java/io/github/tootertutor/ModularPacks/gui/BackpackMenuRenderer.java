@@ -62,7 +62,7 @@ public final class BackpackMenuRenderer {
                 pageSize,
                 upgradeSlots);
 
-        Component title = Text.c("&8Backpack &7(" + type.displayName() + ")");
+        Component title = Text.c("&8Backpack &7(" + type.displayName() + "&7)");
         Inventory inv = Bukkit.createInventory(holder, invSize, title);
         holder.setInventory(inv);
 
@@ -120,7 +120,7 @@ public final class BackpackMenuRenderer {
         page = Math.max(0, Math.min(page, pc - 1));
         holder.page(page);
 
-        Component title = Text.c("&8Backpack &7(" + type.displayName() + ")");
+        Component title = Text.c("&8Backpack &7(" + type.displayName() + "&7)");
         Inventory inv = Bukkit.createInventory(holder, invSize, title);
         holder.setInventory(inv);
 
@@ -168,7 +168,7 @@ public final class BackpackMenuRenderer {
         int clamped = Math.max(0, Math.min(page, holder.pageCount() - 1));
         holder.page(clamped);
 
-        Component title = Text.c("&8Backpack &7(" + type.displayName() + ")");
+        Component title = Text.c("&8Backpack &7(" + type.displayName() + "&7)");
         Inventory inv = Bukkit.createInventory(holder, invSize, title);
         holder.setInventory(inv);
 
@@ -369,7 +369,7 @@ public final class BackpackMenuRenderer {
             if (meta2 != null) {
                 String moduleType = meta2.getPersistentDataContainer().get(keys.MODULE_TYPE, PersistentDataType.STRING);
                 if (moduleType != null && moduleType.equalsIgnoreCase("Tank")) {
-                    TankModuleLogic.applyVisuals(plugin, display, holder.data().moduleStates().get(moduleId));
+                    display = TankModuleLogic.applyVisuals(plugin, display, holder.data().moduleStates().get(moduleId));
                 } else if (moduleType != null) {
                     var def = plugin.cfg().findUpgrade(moduleType);
                     if (def != null) {

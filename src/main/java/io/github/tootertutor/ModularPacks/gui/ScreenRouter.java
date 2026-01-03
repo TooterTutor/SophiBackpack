@@ -14,9 +14,13 @@ import io.github.tootertutor.ModularPacks.data.BackpackData;
 import io.github.tootertutor.ModularPacks.data.ItemStackCodec;
 import io.github.tootertutor.ModularPacks.modules.AnvilModuleLogic;
 import io.github.tootertutor.ModularPacks.modules.CraftingModuleLogic;
+import io.github.tootertutor.ModularPacks.modules.CraftingModuleUi;
 import io.github.tootertutor.ModularPacks.modules.FurnaceStateCodec;
+import io.github.tootertutor.ModularPacks.modules.FurnaceModuleLogic;
 import io.github.tootertutor.ModularPacks.modules.SmithingModuleLogic;
+import io.github.tootertutor.ModularPacks.modules.SmithingModuleUi;
 import io.github.tootertutor.ModularPacks.modules.StonecutterModuleLogic;
+import io.github.tootertutor.ModularPacks.modules.StonecutterModuleUi;
 import net.kyori.adventure.text.Component;
 
 public final class ScreenRouter {
@@ -35,7 +39,52 @@ public final class ScreenRouter {
 			return;
 
 		if (screenType == ScreenType.ANVIL) {
-			AnvilModuleLogic.open(plugin, player, backpackId, backpackType, moduleId);
+			// Opening MenuType-backed views from inside InventoryClickEvent (or other
+			// inventory events) is unreliable; schedule to next tick.
+			Bukkit.getScheduler().runTask(plugin, () -> {
+				if (!player.isOnline())
+					return;
+				AnvilModuleLogic.open(plugin, player, backpackId, backpackType, moduleId);
+			});
+			return;
+		}
+
+		if (screenType == ScreenType.CRAFTING) {
+			// Recipe-book auto-fill only works in a real crafting view (MenuType.CRAFTING),
+			// not a plugin-created WORKBENCH inventory.
+			Bukkit.getScheduler().runTask(plugin, () -> {
+				if (!player.isOnline())
+					return;
+				CraftingModuleUi.open(plugin, player, backpackId, backpackType, moduleId);
+			});
+			return;
+		}
+
+		if (screenType == ScreenType.SMITHING) {
+			Bukkit.getScheduler().runTask(plugin, () -> {
+				if (!player.isOnline())
+					return;
+				SmithingModuleUi.open(plugin, player, backpackId, backpackType, moduleId);
+			});
+			return;
+		}
+
+		if (screenType == ScreenType.STONECUTTER) {
+			Bukkit.getScheduler().runTask(plugin, () -> {
+				if (!player.isOnline())
+					return;
+				StonecutterModuleUi.open(plugin, player, backpackId, backpackType, moduleId);
+			});
+			return;
+		}
+
+		if (screenType == ScreenType.SMELTING || screenType == ScreenType.BLASTING || screenType == ScreenType.SMOKING) {
+			// Furnace-like progress bars only work correctly with MenuType-based views.
+			Bukkit.getScheduler().runTask(plugin, () -> {
+				if (!player.isOnline())
+					return;
+				FurnaceModuleLogic.open(plugin, player, backpackId, backpackType, moduleId, screenType);
+			});
 			return;
 		}
 

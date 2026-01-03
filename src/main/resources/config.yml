@@ -342,6 +342,7 @@ Upgrades:
     Lore:
       - "&7Automatically feeds the Player when hungry."
       - "{toggleState}"
+      - "{feedingMode}"
       - "{moduleActions}"
     CustomModelData: 2004
 

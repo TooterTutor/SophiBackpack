@@ -55,7 +55,7 @@ public final class UpgradeItems {
             meta.getPersistentDataContainer().set(plugin.keys().MODULE_STATE_B64, PersistentDataType.STRING,
                     java.util.Base64.getEncoder().encodeToString(state));
             item.setItemMeta(meta);
-            TankModuleLogic.applyVisuals(plugin, item, state);
+            item = TankModuleLogic.applyVisuals(plugin, item, state);
             return item;
         }
 
