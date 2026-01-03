@@ -36,6 +36,7 @@ import io.github.tootertutor.ModularPacks.ModularPacksPlugin;
 import io.github.tootertutor.ModularPacks.config.BackpackTypeDef;
 import io.github.tootertutor.ModularPacks.config.Placeholders;
 import io.github.tootertutor.ModularPacks.item.BackpackItems;
+import io.github.tootertutor.ModularPacks.item.CustomModelDataUtil;
 import io.github.tootertutor.ModularPacks.item.Keys;
 import io.github.tootertutor.ModularPacks.item.UpgradeItems;
 import io.github.tootertutor.ModularPacks.text.Text;
@@ -256,7 +257,7 @@ public final class RecipeManager implements Listener {
         if (meta != null) {
             meta.displayName(Text.c(typeDef.displayName()));
             if (typeDef.customModelData() > 0) {
-                meta.setCustomModelData(typeDef.customModelData());
+                CustomModelDataUtil.setCustomModelData(meta, typeDef.customModelData());
             }
             if (typeDef.lore() != null && !typeDef.lore().isEmpty()) {
                 meta.lore(Text.lore(Placeholders.expandBackpackLore(plugin, typeDef, null, typeDef.lore())));
@@ -372,7 +373,7 @@ public final class RecipeManager implements Listener {
         if (meta != null) {
             meta.displayName(Text.c(resultType.displayName()));
             if (resultType.customModelData() > 0) {
-                meta.setCustomModelData(resultType.customModelData());
+                CustomModelDataUtil.setCustomModelData(meta, resultType.customModelData());
             }
             if (resultType.lore() != null && !resultType.lore().isEmpty()) {
                 meta.lore(Text.lore(Placeholders.expandBackpackLore(plugin, resultType, null, resultType.lore())));
@@ -430,7 +431,7 @@ public final class RecipeManager implements Listener {
         if (meta != null) {
             meta.displayName(Text.c(Placeholders.expandText(plugin, def, preview, def.displayName())));
             if (def.customModelData() > 0) {
-                meta.setCustomModelData(def.customModelData());
+                CustomModelDataUtil.setCustomModelData(meta, def.customModelData());
             }
             if (def.glint()) {
                 meta.setEnchantmentGlintOverride(true);
@@ -509,7 +510,7 @@ public final class RecipeManager implements Listener {
                 if (meta != null) {
                     meta.displayName(Text.c(type.displayName()));
                     if (type.customModelData() > 0) {
-                        meta.setCustomModelData(type.customModelData());
+                        CustomModelDataUtil.setCustomModelData(meta, type.customModelData());
                     }
                     if (type.lore() != null && !type.lore().isEmpty()) {
                         meta.lore(Text.lore(Placeholders.expandBackpackLore(plugin, type, null, type.lore())));
@@ -527,7 +528,7 @@ public final class RecipeManager implements Listener {
                 if (meta != null) {
                     meta.displayName(Text.c(Placeholders.expandText(plugin, def, it, def.displayName())));
                     if (def.customModelData() > 0) {
-                        meta.setCustomModelData(def.customModelData());
+                        CustomModelDataUtil.setCustomModelData(meta, def.customModelData());
                     }
                     if (def.glint()) {
                         meta.setEnchantmentGlintOverride(true);

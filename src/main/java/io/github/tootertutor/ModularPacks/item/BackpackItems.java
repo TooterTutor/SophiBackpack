@@ -48,7 +48,7 @@ public final class BackpackItems {
         meta.getPersistentDataContainer().set(plugin.keys().BACKPACK_TYPE, PersistentDataType.STRING, type.id());
 
         if (type.customModelData() > 0) {
-            meta.setCustomModelData(type.customModelData());
+            CustomModelDataUtil.setCustomModelData(meta, type.customModelData());
         }
 
         List<String> lore = type.lore();
@@ -75,9 +75,9 @@ public final class BackpackItems {
         meta.getPersistentDataContainer().set(plugin.keys().BACKPACK_TYPE, PersistentDataType.STRING, type.id());
 
         if (type.customModelData() > 0) {
-            meta.setCustomModelData(type.customModelData());
-        } else if (meta.hasCustomModelData()) {
-            meta.setCustomModelData(null);
+            CustomModelDataUtil.setCustomModelData(meta, type.customModelData());
+        } else if (meta.hasCustomModelDataComponent()) {
+            CustomModelDataUtil.setCustomModelData(meta, null);
         }
 
         List<String> lore = type.lore();

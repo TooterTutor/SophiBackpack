@@ -32,7 +32,7 @@ public final class UpgradeItems {
 
         meta.displayName(Text.c(Placeholders.expandText(plugin, def, item, def.displayName())));
         if (def.customModelData() > 0) {
-            meta.setCustomModelData(def.customModelData());
+            CustomModelDataUtil.setCustomModelData(meta, def.customModelData());
         }
         if (def.glint()) {
             meta.setEnchantmentGlintOverride(true);
