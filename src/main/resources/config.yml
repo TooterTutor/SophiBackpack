@@ -269,7 +269,7 @@ Upgrades:
         - "III"
       Ingredients:
         L: LAPIS_LAZULI
-        R: REDSTONE_DUST
+        R: REDSTONE
         I: IRON_INGOT
         T: MODULE:CraftingTemplate
       OutputMaterial: LEVER
@@ -357,7 +357,7 @@ Upgrades:
         - "OTO"
         - " E "
       Ingredients:
-        R: REDSTONE_DUST
+        R: REDSTONE
         O: OBSIDIAN
         T: MODULE:CraftingTemplate
         E: ENDER_PEARL
