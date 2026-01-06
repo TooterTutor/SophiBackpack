@@ -2193,8 +2193,12 @@ public final class BackpackMenuListener implements Listener {
         for (ItemStack it : logical) {
             if (it == null || it.getType().isAir())
                 continue;
-            items.add(it);
+            items.add(it.clone());
         }
+
+        // Merge partial stacks BEFORE sorting (so COUNT sort and other comparators behave
+        // predictably and we don't leave unnecessary partials).
+        items = mergePartialStacks(items);
 
         items.sort(BackpackSortMode.comparator(plugin, holder.sortMode()));
 
@@ -2204,6 +2208,62 @@ public final class BackpackMenuListener implements Listener {
         }
 
         holder.data().contentsBytes(ItemStackCodec.toBytes(out));
+    }
+
+    private static List<ItemStack> mergePartialStacks(List<ItemStack> input) {
+        if (input == null || input.isEmpty())
+            return java.util.Collections.emptyList();
+
+        java.util.ArrayList<ItemStack> merged = new java.util.ArrayList<>(input.size());
+
+        for (ItemStack stack : input) {
+            if (stack == null || stack.getType().isAir())
+                continue;
+
+            ItemStack remaining = stack.clone();
+
+            int maxStack = remaining.getMaxStackSize();
+            if (maxStack <= 1) {
+                merged.add(remaining);
+                continue;
+            }
+
+            // First, try to top up existing partial stacks.
+            for (int i = 0; i < merged.size() && remaining.getAmount() > 0; i++) {
+                ItemStack existing = merged.get(i);
+                if (existing == null || existing.getType().isAir())
+                    continue;
+                if (existing.getMaxStackSize() <= 1)
+                    continue;
+                if (!existing.isSimilar(remaining))
+                    continue;
+
+                int space = existing.getMaxStackSize() - existing.getAmount();
+                if (space <= 0)
+                    continue;
+
+                int move = Math.min(space, remaining.getAmount());
+                if (move <= 0)
+                    continue;
+
+                ItemStack topped = existing.clone();
+                topped.setAmount(existing.getAmount() + move);
+                merged.set(i, topped);
+
+                remaining.setAmount(remaining.getAmount() - move);
+            }
+
+            // Then, split any leftover into full stacks.
+            while (remaining.getAmount() > 0) {
+                int toPlace = Math.min(remaining.getMaxStackSize(), remaining.getAmount());
+                ItemStack placed = remaining.clone();
+                placed.setAmount(toPlace);
+                merged.add(placed);
+                remaining.setAmount(remaining.getAmount() - toPlace);
+            }
+        }
+
+        return merged;
     }
 
 }
